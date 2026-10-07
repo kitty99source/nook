@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en-NZ">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <meta name="theme-color" content="#efe8dc">
+  <title>The Nook</title>
+  <link rel="icon" href="favicon.svg">
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <div class="desk">
+  <div id="lane-left" class="lane lane-left"></div>
+  <div class="sheet">
+    <section id="door" class="door">
+      <form id="door-form">
+        <img class="door-mark" src="/stickers/lilac-moth.svg" alt="">
+        <p class="eyebrow">The Nook</p>
+        <h1><label for="name">What should we call you?</label></h1>
+        <label id="word-label" for="room-word">
+          Room word
+          <input id="room-word" name="roomWord" autocomplete="off" spellcheck="false" placeholder="Leave blank if there isn’t one">
+        </label>
+        <input id="name" name="name" maxlength="40" required autocomplete="nickname" placeholder="Your name">
+        <button type="submit">Come in</button>
+        <p id="door-error" class="error" role="alert"></p>
+      </form>
+    </section>
+
+    <section id="room" class="room" hidden>
+      <header>
+        <div>
+          <p class="eyebrow">The Nook</p>
+          <h1>The room</h1>
+          <p id="fingerprint" class="fingerprint">The room locks in the browser.</p>
+          <div class="keep">
+            <button type="button" id="copy-chat">Copy chat</button>
+            <button type="button" id="save-note">Save to note</button>
+            <button type="button" id="disco-btn">Disco</button>
+            <button type="button" id="affirm-btn">Affirmation cat</button>
+          </div>
+        </div>
+        <div id="presence" class="presence" aria-live="polite"></div>
+      </header>
+      <div class="talk">
+        <ol id="messages" class="messages"></ol>
+        <p id="typing" class="typing" aria-live="polite"></p>
+      </div>
+      <form id="composer" class="composer">
+        <div id="staged" class="staged" hidden></div>
+        <div class="composer-row">
+          <button type="button" id="stickers-btn" aria-expanded="false">Stickers</button>
+          <span class="attach-wrap">
+            <img id="paperclip" class="paperclip" src="/paperclip.png" alt="" width="227" height="425">
+            <button type="button" id="attach-btn">Attach</button>
+          </span>
+          <input id="file" type="file" hidden>
+          <label class="sr" for="text">Message</label>
+          <textarea id="text" rows="1" placeholder="Write a note…" aria-describedby="caution"></textarea>
+          <button type="submit" id="send">Send</button>
+        </div>
+        <p id="caution" class="caution">Do not put patient details, NHIs, or claim numbers in the room.</p>
+        <p id="composer-error" class="error" role="alert"></p>
+      </form>
+      <div id="drawer" class="drawer" hidden>
+        <p class="drawer-hint">GIFs dropped in the stickers folder show up here.</p>
+        <div id="sticker-grid" class="sticker-grid"></div>
+      </div>
+      <div id="drop" class="drop" hidden>Drop it in the nook</div>
+      <div id="live" class="sr" aria-live="polite"></div>
+    </section>
+  </div>
+  <div id="lane-right" class="lane lane-right"></div>
+  </div>
+  <script type="module" src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,9 @@
+# Host setup stays on the laptop. Never commit a mailbox password, a room word, or chat.
+data/
+data/config.json
+node_modules/
+.DS_Store
+Thumbs.db
+.env
+.env.*
+*.pem
