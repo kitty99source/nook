@@ -8,9 +8,9 @@ Colleagues who only chat do not install git, Node, or this app. They open a URL.
 
 ## Who does what
 
-**Host.** Prakriti, or whoever is running the room, double-clicks the start script on their laptop. The script opens the room in their browser and prints a link. They copy that link to anyone who should join. They are the person who closes the room. Closing the terminal, or Ctrl+C, stops the chat for everyone.
+**Host.** Prakriti, or whoever is running the room, double-clicks the start script on their laptop. The script opens the room in their browser and prints a link. On that page they set a code word for this opening. It is not saved. They can copy it from the room and send it wherever they like. Closing the terminal, or Ctrl+C, stops the chat for everyone, and the code word goes with it.
 
-**Chat-only person.** Open the link in a browser. Nothing to install. The door asks what to call you. If a room word is set, type it. If the room word box says you can leave it blank, leave it blank and come in.
+**Chat-only person.** Open the link in a browser. Nothing to install. If the host is still choosing a code word, the page asks you to wait. Then type that word at the door, and what to call you.
 
 **Coder.** Prakriti adds you as a collaborator on this private GitHub repo when you should edit the code. Then clone it, install Node 24, and run the start script. You do not need to be a collaborator just to chat.
 
@@ -22,7 +22,7 @@ On a Mac, double-click `start-nook.command`.
 
 On Windows, double-click `start-nook.bat`.
 
-Both run `scripts/start.mjs`. The script opens `http://127.0.0.1:<port>` in the default browser. If a room word is in use (`NOOK_ROOM_WORD`), that local page is given the word once, then the word is removed from the address bar.
+Both run `scripts/start.mjs`. The script opens the room in the default browser. The host sets a code word on that page. It is not saved. Everyone else types it at the door.
 
 The room listens on `127.0.0.1` only. Other people cannot reach that address. For a link you can send, install Cloudflare’s tunnel tool and start the room again:
 
@@ -30,9 +30,9 @@ The room listens on `127.0.0.1` only. Other people cannot reach that address. Fo
 brew install cloudflared
 ```
 
-If `cloudflared` is on the PATH, the script runs `cloudflared tunnel --url http://127.0.0.1:PORT` and prints the public `trycloudflare.com` link. There is no email list and no `--allowed-mail` gate. Anyone with the link can open the room. The script does not open a mail draft.
+If `cloudflared` is installed, the script runs `cloudflared tunnel --url http://127.0.0.1:PORT` and prints the public `trycloudflare.com` link. No Cloudflare account is required. There is no email list and no `--allowed-mail` gate. The host’s page shows that link beside the code word, with its own Copy button. Anyone with the link can open the room. The script does not open a mail draft. The code word is not part of the link.
 
-A room word is optional. Set `NOOK_ROOM_WORD` before starting if you want the door to require one. Leave it unset and the door can be left blank. The script does not ask for colleague email addresses. An old `data/config.json` that still has addresses or a mailbox password is ignored for entry. Those addresses are not a guest list.
+The host sets a code word each time they start the room. It is held only in memory while the script is open, and it is not written to `data/config.json`. The script does not ask for colleague email addresses. An old `data/config.json` that still has addresses or a mailbox password is ignored for entry. Those addresses are not a guest list.
 
 ## How a chat-only person joins
 

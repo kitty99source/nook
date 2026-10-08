@@ -8,13 +8,20 @@ import { fileURLToPath } from 'node:url';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const stickersDir = path.resolve(process.env.NOOK_STICKERS || path.join(root, 'stickers'));
-const roomWord = (process.env.NOOK_ROOM_WORD || '').trim();
+let roomWord = '';
+let hostToken = (process.env.NOOK_HOST_TOKEN || '').trim();
+let publicUrl = '';
+let linkFailed = false;
+const linkToken = (process.env.NOOK_LINK_TOKEN || '').trim();
 const port = Number(process.env.NOOK_PORT || 8787);
 const MAX_UPLOAD = 8 * 1024 * 1024;
 const MAX_TEXT = 4000;
 const PRESENCE_MS = 15000;
 const JSON_LIMIT = 256 * 1024;
-const PAGE_CSP = "default-src 'self'; img-src 'self' blob:; style-src 'self'; script-src 'self'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'";
+const PAGE_CSP = "default-src 'self'; img-src 'self' blob: https:; media-src https:; style-src 'self'; script-src 'self'; connect-src 'self' https://gifjif.com; frame-src https://www.youtube.com https://www.youtube-nocookie.com https://player.vimeo.com https://www.tiktok.com https://www.instagram.com; base-uri 'none'; frame-ancestors 'none'";
+const CAT_IDS = new Set(['cream', 'lilac', 'ginger', 'sage', 'bow', 'stripe', 'wave', 'disco']);
+const BUILD_FILES = ['index.html', 'app.css', 'app.js', 'e2e.js', 'whimsy.js', 'emoji.js', 'affirmations.js'];
+let buildCache = { key: '', token: '' };
 
 if (!Number.isInteger(port) || port < 1 || port > 65535) {
   console.error('NOOK_PORT is not a usable port.');
@@ -71,12 +78,71 @@ function cleanName(raw) {
   return name;
 }
 
-function wordMatches(given) {
-  if (!roomWord) return true;
-  const a = Buffer.from(String(given ?? '').trim(), 'utf8');
-  const b = Buffer.from(roomWord, 'utf8');
-  if (a.length !== b.length) return false;
+function sameSecret(given, expected) {
+  const a = Buffer.from(String(given ?? ''), 'utf8');
+  const b = Buffer.from(String(expected ?? ''), 'utf8');
+  if (!b.length || a.length !== b.length) return false;
   return crypto.timingSafeEqual(a, b);
+}
+
+function cleanWord(value) {
+  const word = String(value ?? '').replace(/[\r\n\u0000]/g, '').trim();
+  if (!word || word.length > 80) return '';
+  return word;
+}
+
+function wordMatches(given) {
+  return sameSecret(String(given ?? '').trim(), roomWord);
+}
+
+function cleanCat(value) {
+  const id = String(value || '');
+  return CAT_IDS.has(id) ? id : '';
+}
+
+function cleanPhoto(value) {
+  const text = String(value || '');
+  if (!text) return '';
+  if (text.length > 70000 || !/^[A-Za-z0-9+/]+={0,2}$/.test(text)) return null;
+  const buf = Buffer.from(text, 'base64');
+  if (!buf.length || buf.length > 48 * 1024) return null;
+  const png = buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4E && buf[3] === 0x47;
+  const jpeg = buf[0] === 0xFF && buf[1] === 0xD8 && buf[2] === 0xFF;
+  if (!png && !jpeg) return null;
+  return text;
+}
+
+function pageBuild() {
+  const stats = BUILD_FILES.map((name) => {
+    const stat = fs.statSync(path.join(root, 'public', name));
+    return `${name}:${stat.mtimeMs}:${stat.size}`;
+  });
+  const key = stats.join('|');
+  if (key === buildCache.key) return buildCache.token;
+  const hash = crypto.createHash('sha256');
+  for (const name of BUILD_FILES) {
+    hash.update(fs.readFileSync(path.join(root, 'public', name)));
+  }
+  buildCache = { key, token: hash.digest('hex').slice(0, 16) };
+  return buildCache.token;
+}
+
+function admit(name, publicKey, cat, photo) {
+  const token = crypto.randomBytes(24).toString('hex');
+  const memberId = crypto.randomBytes(8).toString('hex');
+  const order = nextOrder;
+  nextOrder += 1;
+  sessions.set(token, {
+    name,
+    memberId,
+    publicKey,
+    cat: cat || '',
+    photo: photo || '',
+    order,
+    lastSeen: Date.now(),
+    typingUntil: 0,
+  });
+  return { token, memberId, name };
 }
 
 function tokenFrom(req, url) {
@@ -124,12 +190,15 @@ function memberList() {
   const list = [];
   for (const session of sessions.values()) {
     if (now - session.lastSeen > PRESENCE_MS) continue;
-    list.push({
+    const person = {
       id: session.memberId,
       name: session.name,
       publicKey: session.publicKey,
       order: session.order,
-    });
+    };
+    if (session.cat) person.cat = session.cat;
+    if (session.photo) person.photo = session.photo;
+    list.push(person);
   }
   list.sort((a, b) => a.order - b.order);
   return list;
@@ -147,20 +216,25 @@ function relayMessage(row) {
 
 function presenceSnapshot(selfToken) {
   const now = Date.now();
-  const names = new Set();
+  const people = new Map();
   const typing = new Set();
   for (const [token, session] of sessions) {
     if (now - session.lastSeen > PRESENCE_MS) {
       sessions.delete(token);
       continue;
     }
-    names.add(session.name);
+    people.set(session.name, { cat: session.cat || '', photo: session.photo || '' });
     if (session.typingUntil > now && token !== selfToken) typing.add(session.name);
   }
-  const sort = (a, b) => a.localeCompare(b);
+  const sort = (a, b) => a[0].localeCompare(b[0]);
   return {
-    presence: [...names].sort(sort).map((name) => ({ name })),
-    typing: [...typing].sort(sort),
+    presence: [...people.entries()].sort(sort).map(([name, info]) => {
+      const person = { name };
+      if (info.cat) person.cat = info.cat;
+      if (info.photo) person.photo = info.photo;
+      return person;
+    }),
+    typing: [...typing].sort((a, b) => a.localeCompare(b)),
   };
 }
 
@@ -277,6 +351,28 @@ function serveFile(res, file, { downloadName = '', inlineImage = false, sticker 
   fs.createReadStream(file).pipe(res);
 }
 
+function serveHome(res, file) {
+  let html;
+  try {
+    html = fs.readFileSync(file, 'utf8').replaceAll('__NOOK_BUILD__', pageBuild());
+  } catch {
+    sendText(res, 404, 'Not found');
+    return;
+  }
+  const data = Buffer.from(html);
+  res.writeHead(200, {
+    'Content-Type': 'text/html; charset=utf-8',
+    'Content-Length': data.length,
+    'X-Content-Type-Options': 'nosniff',
+    'Referrer-Policy': 'no-referrer',
+    'X-Frame-Options': 'DENY',
+    'Cross-Origin-Resource-Policy': 'same-origin',
+    'Cache-Control': 'no-store',
+    'Content-Security-Policy': PAGE_CSP,
+  });
+  res.end(data);
+}
+
 const publicFiles = new Map([
   ['/', 'index.html'],
   ['/index.html', 'index.html'],
@@ -285,13 +381,88 @@ const publicFiles = new Map([
   ['/e2e.js', 'e2e.js'],
   ['/whimsy.js', 'whimsy.js'],
   ['/affirmations.js', 'affirmations.js'],
+  ['/emoji.js', 'emoji.js'],
   ['/paperclip.png', 'paperclip.png'],
   ['/favicon.svg', 'favicon.svg'],
 ]);
 
+function cleanPublicUrl(value) {
+  const url = String(value ?? '').trim();
+  if (!/^https:\/\/[-a-z0-9]+\.trycloudflare\.com$/i.test(url)) return '';
+  return url;
+}
+
+async function handlePublicLink(req, res) {
+  if (req.method === 'GET') {
+    sendJson(res, 200, {
+      url: publicUrl,
+      pending: !publicUrl && !linkFailed,
+      failed: linkFailed && !publicUrl,
+    });
+    return;
+  }
+  if (req.method !== 'POST') {
+    sendJson(res, 405, { error: 'Use GET or POST.' });
+    return;
+  }
+  const body = await readJson(req);
+  if (!linkToken || !sameSecret(body.token, linkToken)) {
+    sendJson(res, 403, { error: 'That link cannot be set.' });
+    return;
+  }
+  if (body.failed) {
+    linkFailed = true;
+    sendJson(res, 200, { ok: true });
+    return;
+  }
+  const url = cleanPublicUrl(body.url);
+  if (!url) {
+    sendJson(res, 400, { error: 'That link is not a public room link.' });
+    return;
+  }
+  publicUrl = url;
+  linkFailed = false;
+  sendJson(res, 200, { ok: true });
+}
+
+async function handleHostCode(req, res) {
+  if (req.method !== 'POST') {
+    sendJson(res, 405, { error: 'Use POST to set the code word.' });
+    return;
+  }
+  const body = await readJson(req);
+  const word = cleanWord(body.word);
+  const name = cleanName(body.name);
+  const publicKey = cleanB64(body.publicKey, 80, 200);
+  if (roomWord || !hostToken || !sameSecret(body.hostToken, hostToken)) {
+    sendJson(res, 403, { error: 'Only the person who started the room can set the code word.' });
+    return;
+  }
+  if (!word) {
+    sendJson(res, 400, { error: 'Set a code word for this room.' });
+    return;
+  }
+  if (!name) {
+    sendJson(res, 400, { error: 'Say what to call you.' });
+    return;
+  }
+  if (!publicKey) {
+    sendJson(res, 400, { error: 'The room could not lock.' });
+    return;
+  }
+  const photo = cleanPhoto(body.photo);
+  if (photo == null) {
+    sendJson(res, 400, { error: 'That picture could not be used.' });
+    return;
+  }
+  roomWord = word;
+  hostToken = '';
+  sendJson(res, 200, admit(name, publicKey, photo ? '' : cleanCat(body.cat), photo));
+}
+
 async function handleJoin(req, res) {
   if (req.method === 'GET') {
-    sendJson(res, 200, { needsWord: Boolean(roomWord) });
+    sendJson(res, 200, { needsWord: Boolean(roomWord), waiting: !roomWord });
     return;
   }
   if (req.method !== 'POST') {
@@ -299,6 +470,10 @@ async function handleJoin(req, res) {
     return;
   }
   const body = await readJson(req);
+  if (!roomWord) {
+    sendJson(res, 409, { error: 'The host has not set a code word yet.', waiting: true });
+    return;
+  }
   if (!wordMatches(body.roomWord)) {
     sendJson(res, 401, { error: 'That room word is not right.', needsWord: true });
     return;
@@ -313,19 +488,12 @@ async function handleJoin(req, res) {
     sendJson(res, 400, { error: 'The room could not lock.' });
     return;
   }
-  const token = crypto.randomBytes(24).toString('hex');
-  const memberId = crypto.randomBytes(8).toString('hex');
-  const order = nextOrder;
-  nextOrder += 1;
-  sessions.set(token, {
-    name,
-    memberId,
-    publicKey,
-    order,
-    lastSeen: Date.now(),
-    typingUntil: 0,
-  });
-  sendJson(res, 200, { token, memberId, name });
+  const photo = cleanPhoto(body.photo);
+  if (photo == null) {
+    sendJson(res, 400, { error: 'That picture could not be used.' });
+    return;
+  }
+  sendJson(res, 200, admit(name, publicKey, photo ? '' : cleanCat(body.cat), photo));
 }
 
 async function handleSend(req, res, url) {
@@ -473,8 +641,20 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    if (pathname === '/api/build' && req.method === 'GET') {
+      sendJson(res, 200, { build: pageBuild() });
+      return;
+    }
     if (pathname === '/api/join') {
       await handleJoin(req, res);
+      return;
+    }
+    if (pathname === '/api/host-code') {
+      await handleHostCode(req, res);
+      return;
+    }
+    if (pathname === '/api/public-link') {
+      await handlePublicLink(req, res);
       return;
     }
     if (pathname === '/api/send') {
@@ -530,6 +710,10 @@ const server = http.createServer(async (req, res) => {
     const publicName = publicFiles.get(pathname);
     if (publicName && req.method === 'GET') {
       const file = path.join(root, 'public', publicName);
+      if (publicName === 'index.html') {
+        serveHome(res, file);
+        return;
+      }
       serveFile(res, file);
       return;
     }
@@ -563,6 +747,10 @@ function stop() {
   seenWrapParcels.clear();
   files.clear();
   sessions.clear();
+  roomWord = '';
+  hostToken = '';
+  publicUrl = '';
+  linkFailed = false;
   server.close();
   process.exit(0);
 }

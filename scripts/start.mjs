@@ -9,7 +9,6 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dataDir = path.resolve(process.env.NOOK_DATA || path.join(root, 'data'));
-const WORDS = ['lilac', 'moth', 'paper', 'kettle', 'sprout', 'linen', 'pebble', 'wren', 'teacup', 'clover', 'moss', 'honey', 'willow', 'thimble', 'apricot'];
 
 let port = 0;
 let shuttingDown = false;
@@ -17,17 +16,10 @@ let announced = false;
 let cloudflaredBin = '';
 const children = [];
 
-export function makeRoomWord() {
-  const first = WORDS[crypto.randomInt(WORDS.length)];
-  let second = WORDS[crypto.randomInt(WORDS.length)];
-  if (second === first) second = WORDS[(WORDS.indexOf(first) + 3) % WORDS.length];
-  return `${first}-${second}-${crypto.randomInt(10, 100)}`;
-}
-
-export function localRoomUrl(portNumber, word) {
+export function localRoomUrl(portNumber, hostToken) {
   const base = `http://127.0.0.1:${portNumber}/`;
-  if (!word) return base;
-  return `${base}#w=${encodeURIComponent(word)}`;
+  if (!hostToken) return base;
+  return `${base}#h=${encodeURIComponent(hostToken)}`;
 }
 
 export function browserOpenArgs(url) {
@@ -38,7 +30,7 @@ export function browserOpenArgs(url) {
 
 function openRoomInBrowser(url) {
   if (process.env.NOOK_SKIP_OPEN === '1') {
-    console.log(`Would open the room in your browser: ${url}`);
+    console.log(`Would open the room in your browser: ${url.split('#')[0]}`);
     return;
   }
   const [command, args] = browserOpenArgs(url);
@@ -80,6 +72,7 @@ function delay(ms) {
 function writeConfig(file, config) {
   const stored = {};
   if (config.hostName) stored.hostName = config.hostName;
+  delete stored.roomWord;
   fs.mkdirSync(dataDir, { recursive: true });
   fs.writeFileSync(file, `${JSON.stringify(stored, null, 2)}\n`, { mode: 0o600 });
   try { fs.chmodSync(file, 0o600); } catch { /* best effort */ }
@@ -214,8 +207,14 @@ async function choosePort() {
 function findCloudflared() {
   const cmd = process.platform === 'win32' ? 'where' : 'which';
   const result = spawnSync(cmd, ['cloudflared'], { encoding: 'utf8' });
-  if (result.status !== 0) return '';
-  return (result.stdout || '').split(/\r?\n/).map((line) => line.trim()).find(Boolean) || '';
+  const found = result.status === 0
+    ? (result.stdout || '').split(/\r?\n/).map((line) => line.trim()).find(Boolean)
+    : '';
+  if (found) return found;
+  const extras = process.platform === 'win32'
+    ? []
+    : ['/opt/homebrew/bin/cloudflared', '/usr/local/bin/cloudflared'];
+  return extras.find((file) => fs.existsSync(file)) || '';
 }
 
 async function waitUntilUp(child) {
@@ -239,7 +238,7 @@ function watchServer(child) {
   });
 }
 
-async function bootServer(word) {
+async function bootServer(hostToken, linkToken) {
   const previous = children.filter((child) => child.kind === 'server' && child.exitCode === null);
   for (const child of previous) {
     child.replacing = true;
@@ -253,7 +252,9 @@ async function bootServer(word) {
         ...process.env,
         NOOK_PORT: String(port),
         NOOK_DATA: dataDir,
-        NOOK_ROOM_WORD: word || '',
+        NOOK_HOST_TOKEN: hostToken,
+        NOOK_LINK_TOKEN: linkToken,
+        NOOK_ROOM_WORD: '',
         NOOK_QUIET: '1',
       },
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -327,8 +328,9 @@ async function main() {
   const name = hostLabel(config);
   port = await choosePort();
   cloudflaredBin = findCloudflared();
-  const word = (process.env.NOOK_ROOM_WORD || '').trim();
-  await bootServer(word);
+  const hostToken = crypto.randomBytes(24).toString('hex');
+  const linkToken = crypto.randomBytes(24).toString('hex');
+  await bootServer(hostToken, linkToken);
 
   announced = true;
   console.log('');
@@ -340,22 +342,37 @@ async function main() {
 
   let publicUrl = '';
 
+  openRoomInBrowser(localRoomUrl(port, hostToken));
+
+  async function publishLink(url, failed = false) {
+    try {
+      await fetch(`http://127.0.0.1:${port}/api/public-link`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: linkToken, url, failed }),
+      });
+    } catch {
+      // The page keeps saying the link is on its way.
+    }
+  }
+
   if (!cloudflaredBin) {
     console.log('');
     console.log('cloudflared is not installed, so there is no public link yet.');
     console.log('Install it with: brew install cloudflared');
     console.log('The room is open on this laptop.');
+    await publishLink('', true);
   } else {
     console.log('');
     console.log('Opening a public link…');
     const result = await openTunnel();
-    if (result.url) publicUrl = result.url;
-    else console.log('Could not open a public link. The room is still open on this laptop.');
-  }
-
-  if (word) {
-    console.log(`Room word: ${word}`);
-    console.log('The door asks for that word. It is optional: leave the door blank when no word is set.');
+    if (result.url) {
+      publicUrl = result.url;
+      await publishLink(publicUrl);
+    } else {
+      console.log('Could not open a public link. The room is still open on this laptop.');
+      await publishLink('', true);
+    }
   }
 
   if (publicUrl) {
@@ -366,7 +383,6 @@ async function main() {
   const shareUrl = publicUrl || `http://127.0.0.1:${port}`;
   console.log(`Link: ${shareUrl}`);
   console.log('Tell a colleague: Open this link. Nothing to install.');
-  openRoomInBrowser(localRoomUrl(port, word));
   await new Promise(() => {});
 }
 
