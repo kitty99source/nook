@@ -468,6 +468,27 @@ async function handleHostCode(req, res) {
   sendJson(res, 200, admit(name, publicKey, photo ? '' : cleanCat(body.cat), photo));
 }
 
+async function handlePicture(req, res, url) {
+  if (req.method !== 'POST') {
+    sendJson(res, 405, { error: 'Use POST to change the picture.' });
+    return;
+  }
+  const session = sessionFor(tokenFrom(req, url));
+  if (!session) {
+    sendJson(res, 401, { error: 'Come in again.' });
+    return;
+  }
+  const body = await readJson(req);
+  const photo = cleanPhoto(body.photo);
+  if (photo == null) {
+    sendJson(res, 400, { error: 'That picture could not be used.' });
+    return;
+  }
+  session.photo = photo;
+  session.cat = '';
+  sendJson(res, 200, { ok: true });
+}
+
 async function handleJoin(req, res) {
   if (req.method === 'GET') {
     sendJson(res, 200, { needsWord: Boolean(roomWord), waiting: !roomWord });
@@ -714,6 +735,10 @@ const server = http.createServer(async (req, res) => {
     }
     if (pathname === '/api/host-code') {
       await handleHostCode(req, res);
+      return;
+    }
+    if (pathname === '/api/picture') {
+      await handlePicture(req, res, url);
       return;
     }
     if (pathname === '/api/public-link') {

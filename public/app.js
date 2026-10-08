@@ -83,11 +83,9 @@ const catSkip = document.querySelector('#cat-skip');
 const ownChoice = document.querySelector('#own-choice');
 const ownFileBtn = document.querySelector('#own-file-btn');
 const ownFile = document.querySelector('#own-file');
-const folderLine = document.querySelector('#folder-line');
-const folderBtn = document.querySelector('#folder-btn');
-const folderHint = document.querySelector('#folder-hint');
-const folderAsk = document.querySelector('#folder-ask');
-const folderAllow = document.querySelector('#folder-allow');
+const changePictureBtn = document.querySelector('#change-picture');
+const settingsPicture = document.querySelector('#settings-picture');
+const pictureNote = document.querySelector('#picture-note');
 const updateToast = document.querySelector('#update-toast');
 const emojiBoard = document.querySelector('#emoji-board');
 const dropVeil = document.querySelector('#drop');
@@ -2147,7 +2145,6 @@ async function writeFolderPicture(blob) {
   const writable = await handle.createWritable();
   await writable.write(blob);
   await writable.close();
-  folderHint.textContent = 'Saved in that folder as nook-picture.png.';
 }
 
 async function readColosseumCopy() {
@@ -2180,10 +2177,19 @@ async function useOwnFile(file) {
     chosenCat = '';
     await rememberPhotoBlob(blob);
     doorError.textContent = '';
-    if (folderHandle) {
-      try { await writeFolderPicture(blob); } catch {
-        doorError.textContent = 'The folder did not keep the picture. This browser still has it.';
-      }
+    if (pictureNote) pictureNote.textContent = 'This browser will remember that picture.';
+    saveEntry(nameInput.value || myName, 'photo');
+    if (token && memberId) {
+      const b64 = await blobToB64(blob);
+      photoUrl(memberId, b64);
+      paintPage();
+      try {
+        await fetch('/api/picture', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Token': token },
+          body: JSON.stringify({ photo: b64 }),
+        });
+      } catch { /* the browser copy is already kept */ }
     }
   } catch {
     doorError.textContent = 'That picture could not be used.';
@@ -2198,8 +2204,6 @@ async function chooseFolder() {
     return;
   }
   try { await idbSet('folder', folderHandle); } catch { /* browser remember still works */ }
-  folderHint.textContent = 'You can pick Desktop.';
-  folderAsk.hidden = true;
   if (chosenPhoto || keptPhoto) {
     try { await writeFolderPicture(chosenPhoto || keptPhoto); } catch {
       doorError.textContent = 'The folder did not keep the picture.';
@@ -2262,19 +2266,12 @@ function buildCatChoices() {
     const file = event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files[0];
     if (file) useOwnFile(file);
   });
-  if (window.showDirectoryPicker) {
-    folderLine.hidden = false;
-    folderBtn.addEventListener('click', () => chooseFolder());
-    folderAllow.addEventListener('click', async () => {
-      folderAsk.hidden = true;
-      if (!folderHandle || folderAsked) return;
-      folderAsked = true;
-      try {
-        const perm = await folderHandle.requestPermission({ mode: 'readwrite' });
-        if (perm === 'granted') await useFolderIfAllowed();
-      } catch {
-        // The browser copy is still there.
-      }
+  if (changePictureBtn && settingsPicture) {
+    changePictureBtn.addEventListener('click', () => settingsPicture.click());
+    settingsPicture.addEventListener('change', () => {
+      const file = settingsPicture.files && settingsPicture.files[0];
+      settingsPicture.value = '';
+      if (file) useOwnFile(file);
     });
   }
 }
@@ -2301,19 +2298,6 @@ async function prepareEntry() {
     if (blob instanceof Blob) await withTimeout(rememberPhotoBlob(blob), 1200);
   } catch {
     // No browser copy yet, or it took too long to read.
-  }
-  try {
-    const handle = await withTimeout(idbGet('folder'), 1200);
-    if (handle && typeof handle.getFileHandle === 'function') folderHandle = handle;
-  } catch {
-    folderHandle = null;
-  }
-  if (folderHandle) {
-    let perm = 'prompt';
-    try { perm = await withTimeout(folderHandle.queryPermission({ mode: 'readwrite' }), 1200); } catch { perm = 'denied'; }
-    if (perm === 'granted') {
-      try { await withTimeout(useFolderIfAllowed(), 1500); } catch { /* the door does not wait on the folder */ }
-    } else if (perm === 'prompt') folderAsk.hidden = false;
   }
   if (chosenCat === 'photo' && keptPhoto) selectKeptPhoto();
   else if (CAT_IDS.has(chosenCat)) selectCat(chosenCat);
@@ -2497,7 +2481,8 @@ async function boot() {
   door.hidden = false;
 }
 
-showGuestDoor();
+if (hostToken) showHostSetter();
+else showGuestDoor();
 
 prepareEntry();
 
