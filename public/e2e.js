@@ -22,11 +22,32 @@ export function b64ToBytes(value) {
 export async function createIdentity() {
   const pair = await crypto.subtle.generateKey(
     { name: 'ECDH', namedCurve: 'P-256' },
-    false,
+    true,
     ['deriveBits'],
   );
   const publicKey = bytesToB64(new Uint8Array(await crypto.subtle.exportKey('spki', pair.publicKey)));
   return { privateKey: pair.privateKey, publicKey };
+}
+
+export async function exportIdentity(identity) {
+  const jwk = await crypto.subtle.exportKey('jwk', identity.privateKey);
+  return { publicKey: identity.publicKey, jwk };
+}
+
+export async function importIdentity(saved) {
+  const jwk = saved.jwk;
+  const publicKey = String(saved.publicKey || '');
+  if (!jwk || jwk.kty !== 'EC' || jwk.crv !== 'P-256' || !jwk.d || !jwk.x || !jwk.y || !publicKey) {
+    throw new Error('bad key');
+  }
+  const privateKey = await crypto.subtle.importKey(
+    'jwk',
+    { kty: 'EC', crv: 'P-256', d: jwk.d, x: jwk.x, y: jwk.y },
+    { name: 'ECDH', namedCurve: 'P-256' },
+    true,
+    ['deriveBits'],
+  );
+  return { privateKey, publicKey };
 }
 
 export async function createGroupKey() {

@@ -4,50 +4,88 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex">
-  <meta name="theme-color" content="#efe8dc">
+  <meta name="theme-color" content="#0b0820">
+  <meta name="nook-build" content="__NOOK_BUILD__">
   <title>The Nook</title>
   <link rel="icon" href="favicon.svg">
   <link rel="stylesheet" href="app.css">
+  <link rel="stylesheet" href="colosseum.css">
 </head>
 <body>
-  <div class="desk">
-  <div id="lane-left" class="lane lane-left"></div>
-  <div class="sheet">
-    <section id="door" class="door">
-      <form id="door-form">
-        <img class="door-mark" src="/stickers/lilac-moth.svg" alt="">
-        <p class="eyebrow">The Nook</p>
-        <h1><label for="name">What should we call you?</label></h1>
-        <label id="word-label" for="room-word">
-          Room word
-          <input id="room-word" name="roomWord" autocomplete="off" spellcheck="false" placeholder="Leave blank if there isn’t one">
-        </label>
-        <input id="name" name="name" maxlength="40" required autocomplete="nickname" placeholder="Your name">
-        <button type="submit">Come in</button>
-        <p id="door-error" class="error" role="alert"></p>
-      </form>
-    </section>
-
-    <section id="room" class="room" hidden>
-      <header>
-        <div>
-          <p class="eyebrow">The Nook</p>
-          <h1>The room</h1>
-          <p id="fingerprint" class="fingerprint">The room locks in the browser.</p>
-          <div class="keep">
-            <button type="button" id="copy-chat">Copy chat</button>
-            <button type="button" id="save-note">Save to note</button>
-            <button type="button" id="disco-btn">Disco</button>
-            <button type="button" id="affirm-btn">Affirmation cat</button>
-          </div>
+  <canvas id="world" class="world" aria-hidden="true"></canvas>
+  <section id="door" class="door">
+    <div class="door-card">
+    <img class="door-mark" src="/stickers/lilac-moth.svg" alt="">
+    <p class="eyebrow">The Nook</p>
+    <p id="waiting" class="waiting" hidden>The host is choosing a code word. Wait here.</p>
+    <form id="door-form">
+      <h1><label for="name">What should we call you?</label></h1>
+      <label id="word-label" for="room-word">
+        <span id="word-label-text">Room word</span>
+        <input id="room-word" name="roomWord" autocomplete="off" spellcheck="false" required>
+      </label>
+      <input id="name" name="name" maxlength="40" required autocomplete="nickname" placeholder="Your name">
+      <fieldset id="cat-pick" class="cat-pick">
+        <legend>A picture, if you like</legend>
+        <div id="cat-choices" class="cat-choices"></div>
+        <div class="own-picture">
+          <button type="button" id="own-choice" hidden>Your picture</button>
+          <button type="button" id="own-file-btn">Choose a picture</button>
+          <input id="own-file" type="file" accept="image/*" hidden>
         </div>
-        <div id="presence" class="presence" aria-live="polite"></div>
-      </header>
-      <div class="talk">
+        <p class="drop-hint">Or drop a picture here.</p>
+        <button type="button" id="cat-skip" aria-pressed="true">Skip</button>
+      </fieldset>
+      <button type="submit" id="come-in">Come in</button>
+      <p id="door-error" class="error" role="alert"></p>
+    </form>
+    </div>
+  </section>
+
+  <section id="room" class="room chat-pop" hidden aria-label="The Nook chat">
+    <div class="pop-bar room-bar">
+      <span class="grip" aria-hidden="true"></span>
+      <span class="pop-title">The Nook</span>
+      <div id="presence" class="presence" aria-live="polite"></div>
+      <span class="pop-tools">
+        <button type="button" id="colosseum-btn" class="colo-entry" aria-expanded="false" aria-controls="colosseum-pop">Colosseum</button>
+        <button type="button" id="settings-btn" class="settings-btn" aria-expanded="false" aria-controls="settings-panel" aria-label="Settings">
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+            <circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.7"/>
+            <path d="M12 3.2v2.3M12 18.5v2.3M3.2 12h2.3M18.5 12h2.3M5.8 5.8l1.6 1.6M16.6 16.6l1.6 1.6M18.2 5.8l-1.6 1.6M7.4 16.6l-1.6 1.6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+          </svg>
+        </button>
+        <button type="button" class="pop-btn" data-role="min" aria-label="Minimise the chat">–</button>
+      </span>
+    </div>
+    <div class="room-info">
+      <p id="fingerprint" class="fingerprint">The room locks in the browser.</p>
+      <p id="code-line" class="code-line" hidden>
+        <span id="code-word"></span>
+        <button type="button" id="copy-code" aria-label="Copy code word">Copy</button>
+      </p>
+      <p id="link-line" class="code-line" hidden>
+        <span id="public-link">The public link is on its way.</span>
+        <button type="button" id="copy-link" aria-label="Copy public link" hidden>Copy</button>
+      </p>
+    </div>
+    <div class="talk">
+        <div class="pages">
+          <button type="button" id="older-page">Older</button>
+          <span id="page-label">1 of 1</span>
+          <button type="button" id="newer-page">Newer</button>
+        </div>
         <ol id="messages" class="messages"></ol>
         <p id="typing" class="typing" aria-live="polite"></p>
       </div>
       <form id="composer" class="composer">
+        <div id="replying" class="replying" hidden>
+          <div class="replying-copy">
+            <span id="replying-label"></span>
+            <span id="replying-snippet"></span>
+          </div>
+          <button type="button" id="reply-cancel">Cancel</button>
+        </div>
         <div id="staged" class="staged" hidden></div>
         <div class="composer-row">
           <button type="button" id="stickers-btn" aria-expanded="false">Stickers</button>
@@ -57,21 +95,98 @@
           </span>
           <input id="file" type="file" hidden>
           <label class="sr" for="text">Message</label>
-          <textarea id="text" rows="1" placeholder="Write a note…" aria-describedby="caution"></textarea>
+          <textarea id="text" rows="1" placeholder="Write a note…"></textarea>
           <button type="submit" id="send">Send</button>
         </div>
-        <p id="caution" class="caution">Do not put patient details, NHIs, or claim numbers in the room.</p>
         <p id="composer-error" class="error" role="alert"></p>
       </form>
       <div id="drawer" class="drawer" hidden>
-        <p class="drawer-hint">GIFs dropped in the stickers folder show up here.</p>
-        <div id="sticker-grid" class="sticker-grid"></div>
+        <div id="sticker-pane">
+          <p class="drawer-hint">GIFs dropped in the stickers folder show up here.</p>
+          <div id="sticker-grid" class="sticker-grid"></div>
+        </div>
+        <div id="gif-pane" hidden>
+          <label class="gif-search">
+            <span class="sr">Search GIFs</span>
+            <input id="gif-query" type="search" placeholder="Search GIFs" autocomplete="off" enterkeyhint="search">
+          </label>
+          <p id="gif-status" class="drawer-hint">Type a word.</p>
+          <div id="gif-grid" class="sticker-grid"></div>
+        </div>
       </div>
       <div id="drop" class="drop" hidden>Drop it in the nook</div>
       <div id="live" class="sr" aria-live="polite"></div>
-    </section>
-  </div>
-  <div id="lane-right" class="lane lane-right"></div>
+  </section>
+
+  <section id="settings-panel" class="settings-panel" hidden aria-label="Settings">
+    <div class="pop-bar">
+      <span class="grip" aria-hidden="true"></span>
+      <span class="pop-title">Settings</span>
+      <span class="pop-tools">
+        <button type="button" class="pop-btn" data-role="close" aria-label="Close Settings">×</button>
+      </span>
+    </div>
+    <div class="pop-body settings-body">
+        <fieldset class="settings-group">
+          <legend>Theme</legend>
+          <div id="theme-choices" class="choice-grid" role="radiogroup" aria-label="Theme">
+            <button type="button" role="radio" data-theme="paper">Paper</button>
+            <button type="button" role="radio" data-theme="dark">Dark</button>
+            <button type="button" role="radio" data-theme="cyberpunk">Cyberpunk</button>
+            <button type="button" role="radio" data-theme="akira">Akira Red</button>
+          </div>
+        </fieldset>
+        <button type="button" id="disco-btn" aria-pressed="false">Disco</button>
+        <button type="button" id="sequin-btn" aria-pressed="false">Sequins</button>
+        <fieldset class="settings-group">
+          <legend>Sequin look</legend>
+          <div id="look-choices" class="choice-grid" role="radiogroup" aria-label="Sequin look">
+            <button type="button" role="radio" data-look="pixel">Pixel</button>
+            <button type="button" role="radio" data-look="sleek">Sleek</button>
+            <button type="button" role="radio" data-look="matrix">Matrix</button>
+          </div>
+        </fieldset>
+        <fieldset class="settings-group">
+          <legend>Sequin colour</legend>
+          <div id="colour-choices" class="choice-grid" role="radiogroup" aria-label="Sequin colour">
+            <button type="button" role="radio" data-colour="silver">Silver</button>
+            <button type="button" role="radio" data-colour="rainbow">Rainbow</button>
+            <button type="button" role="radio" data-colour="crimson">Crimson</button>
+            <button type="button" role="radio" data-colour="neon">Neon</button>
+            <button type="button" role="radio" data-colour="akira">Akira red</button>
+            <button type="button" role="radio" data-colour="matrix">Matrix green</button>
+          </div>
+          <p id="colour-note" class="settings-note" hidden></p>
+        </fieldset>
+        <fieldset class="settings-group">
+          <legend>Picture</legend>
+          <button type="button" id="change-picture">Change picture</button>
+          <input id="settings-picture" type="file" accept="image/*" hidden>
+          <p id="picture-note" class="settings-note"></p>
+        </fieldset>
+        <fieldset class="settings-group">
+          <legend>Game</legend>
+          <label class="gauge" for="gore-gauge">
+            <span>Pixel bits when an alien pops</span>
+            <input id="gore-gauge" type="range" min="0" max="3" step="1" value="0" list="gore-marks">
+            <datalist id="gore-marks"><option value="0"></option><option value="1"></option><option value="2"></option><option value="3"></option></datalist>
+            <span id="gore-label" class="settings-note">None</span>
+          </label>
+          <p class="settings-note">Stylised pixels in the game only. Never in the chat.</p>
+          <button type="button" id="reset-windows">Put the windows back</button>
+        </fieldset>
+        <div class="settings-actions">
+          <button type="button" id="affirm-btn">Affirmation cat</button>
+          <button type="button" id="copy-chat">Copy chat</button>
+          <button type="button" id="save-note">Save to note</button>
+        </div>
+    </div>
+  </section>
+
+  <div id="emoji-board" class="emoji-board" hidden></div>
+  <div id="update-toast" class="update-toast" hidden>
+    <p>A newer page is ready.</p>
+    <button type="button" id="update-now">Update</button>
   </div>
   <script type="module" src="app.js"></script>
 </body>
