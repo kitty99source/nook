@@ -16,6 +16,7 @@ import {
 } from './e2e.js';
 import { EMOJI_GROUPS } from './affirmations.js';
 import { CAT_PRESETS, catPortrait, mountWhimsy } from './whimsy.js';
+import { mountColosseum, settleColosseum } from './colosseum.js';
 
 const POLL_MS = 2000;
 const MAX_FILE = 8 * 1024 * 1024;
@@ -33,6 +34,7 @@ const ENTRY_KEY = 'nook-entry';
 const HANDOFF_KEY = 'nook-resume';
 const PICTURE_DB = 'nook-picture';
 const PICTURE_FILE = 'nook-picture.png';
+const COLO_FILE = 'nook-colosseum.json';
 const GIF_HOST = 'gifjif.com';
 const loadedBuild = document.querySelector('meta[name="nook-build"]')?.content || '';
 
@@ -982,15 +984,33 @@ function showHostCode(word) {
   watchPublicLink();
 }
 
+function colosseumHooks() {
+  return {
+    getToken: () => token,
+    getMemberId: () => memberId,
+    getName: () => myName,
+    getGroupKey: () => groupKey,
+    people: () => members.map((member) => ({
+      id: member.id,
+      name: rememberedNames.get(member.id) || member.name,
+      photo: photoFor(member.id),
+    })),
+    readCopy: readColosseumCopy,
+    writeCopy: writeColosseumCopy,
+  };
+}
+
 function showRoom() {
   door.hidden = true;
   room.hidden = false;
   following = true;
   paintPage({ stick: true, reset: true });
   text.focus();
+  mountColosseum(colosseumHooks());
 }
 
 function backToDoor(message) {
+  settleColosseum();
   stopLinkWatch();
   hostCode = '';
   publicLink = '';
@@ -2128,6 +2148,25 @@ async function writeFolderPicture(blob) {
   await writable.write(blob);
   await writable.close();
   folderHint.textContent = 'Saved in that folder as nook-picture.png.';
+}
+
+async function readColosseumCopy() {
+  if (!folderHandle) return '';
+  try {
+    const handle = await folderHandle.getFileHandle(COLO_FILE);
+    const file = await handle.getFile();
+    return await file.text();
+  } catch {
+    return '';
+  }
+}
+
+async function writeColosseumCopy(text) {
+  if (!folderHandle || typeof text !== 'string') return;
+  const handle = await folderHandle.getFileHandle(COLO_FILE, { create: true });
+  const writable = await handle.createWritable();
+  await writable.write(text);
+  await writable.close();
 }
 
 async function useOwnFile(file) {

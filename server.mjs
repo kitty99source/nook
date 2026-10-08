@@ -20,7 +20,7 @@ const PRESENCE_MS = 15000;
 const JSON_LIMIT = 256 * 1024;
 const PAGE_CSP = "default-src 'self'; img-src 'self' blob: https:; media-src https:; style-src 'self'; script-src 'self'; connect-src 'self' https://gifjif.com; frame-src https://www.youtube.com https://www.youtube-nocookie.com https://player.vimeo.com https://www.tiktok.com https://www.instagram.com; base-uri 'none'; frame-ancestors 'none'";
 const CAT_IDS = new Set(['cream', 'lilac', 'ginger', 'sage', 'bow', 'stripe', 'wave', 'disco']);
-const BUILD_FILES = ['index.html', 'app.css', 'app.js', 'e2e.js', 'whimsy.js', 'emoji.js', 'affirmations.js'];
+const BUILD_FILES = ['index.html', 'app.css', 'app.js', 'e2e.js', 'whimsy.js', 'emoji.js', 'affirmations.js', 'colosseum.js', 'colosseum.css', 'colosseum-art.js', 'colosseum-logic.mjs'];
 let buildCache = { key: '', token: '' };
 
 if (!Number.isInteger(port) || port < 1 || port > 65535) {
@@ -34,6 +34,10 @@ const files = new Map();
 const wraps = [];
 const seenNotes = new Set();
 const seenWrapParcels = new Set();
+const games = [];
+const seenGameParcels = new Set();
+let nextGameId = 1;
+const GAME_POLL_MS = 400;
 let nextId = 1;
 let nextWrapId = 1;
 let nextOrder = 1;
@@ -301,7 +305,7 @@ function contentTypeFor(file) {
   const ext = path.extname(file).toLowerCase();
   if (ext === '.html') return 'text/html; charset=utf-8';
   if (ext === '.css') return 'text/css; charset=utf-8';
-  if (ext === '.js') return 'text/javascript; charset=utf-8';
+  if (ext === '.js' || ext === '.mjs') return 'text/javascript; charset=utf-8';
   if (ext === '.svg') return 'image/svg+xml';
   if (ext === '.gif') return 'image/gif';
   if (ext === '.png') return 'image/png';
@@ -343,7 +347,7 @@ function serveFile(res, file, { downloadName = '', inlineImage = false, sticker 
     headers['Content-Security-Policy'] = PAGE_CSP;
     headers['Cache-Control'] = 'no-store';
   }
-  if (file.endsWith('.css') || file.endsWith('.js')) {
+  if (file.endsWith('.css') || file.endsWith('.js') || file.endsWith('.mjs')) {
     headers['Content-Security-Policy'] = PAGE_CSP;
     headers['Cache-Control'] = 'no-store';
   }
@@ -382,6 +386,10 @@ const publicFiles = new Map([
   ['/whimsy.js', 'whimsy.js'],
   ['/affirmations.js', 'affirmations.js'],
   ['/emoji.js', 'emoji.js'],
+  ['/colosseum.js', 'colosseum.js'],
+  ['/colosseum.css', 'colosseum.css'],
+  ['/colosseum-art.js', 'colosseum-art.js'],
+  ['/colosseum-logic.mjs', 'colosseum-logic.mjs'],
   ['/paperclip.png', 'paperclip.png'],
   ['/favicon.svg', 'favicon.svg'],
 ]);
@@ -573,6 +581,61 @@ async function handleWrap(req, res, url) {
   sendJson(res, 200, { wrap });
 }
 
+function relayGame(row) {
+  return { id: row.id, memberId: row.memberId, iv: row.iv, data: row.data, at: row.at };
+}
+
+function handleGamePoll(req, res, url) {
+  if (req.method !== 'GET') {
+    sendJson(res, 405, { error: 'Use GET to refresh the game.' });
+    return;
+  }
+  const session = sessionFor(tokenFrom(req, url));
+  if (!session) {
+    sendJson(res, 401, { error: 'Come in again.' });
+    return;
+  }
+  let since = Number(url.searchParams.get('since') || 0);
+  if (!Number.isFinite(since) || since < 0) since = 0;
+  sendJson(res, 200, {
+    parcels: games.filter((row) => row.id > since).map(relayGame),
+    pollMs: GAME_POLL_MS,
+  });
+}
+
+async function handleGamePost(req, res, url) {
+  if (req.method !== 'POST') {
+    sendJson(res, 405, { error: 'Use POST to send a game parcel.' });
+    return;
+  }
+  const session = sessionFor(tokenFrom(req, url));
+  if (!session) {
+    sendJson(res, 401, { error: 'Come in again.' });
+    return;
+  }
+  const body = await readJson(req);
+  const iv = cleanB64(body.iv, 8, 40);
+  const data = cleanB64(body.data, 16, 12000);
+  if (!iv || !data) {
+    sendJson(res, 400, { error: 'That game parcel could not be carried.' });
+    return;
+  }
+  const key = parcelKey(iv, data);
+  if (seenGameParcels.has(key)) {
+    sendJson(res, 409, { error: 'That game parcel was already carried.' });
+    return;
+  }
+  seenGameParcels.add(key);
+  const row = { id: nextGameId, memberId: session.memberId, iv, data, at: Date.now() };
+  nextGameId += 1;
+  games.push(row);
+  if (games.length > 500) {
+    const dropped = games.splice(0, games.length - 500);
+    for (const item of dropped) seenGameParcels.delete(parcelKey(item.iv, item.data));
+  }
+  sendJson(res, 200, { parcel: relayGame(row) });
+}
+
 function handlePoll(req, res, url) {
   if (req.method !== 'GET') {
     sendJson(res, 405, { error: 'Use GET to refresh the room.' });
@@ -669,6 +732,14 @@ const server = http.createServer(async (req, res) => {
       handlePoll(req, res, url);
       return;
     }
+    if (pathname === '/api/game') {
+      if (req.method === 'GET') {
+        handleGamePoll(req, res, url);
+        return;
+      }
+      await handleGamePost(req, res, url);
+      return;
+    }
     if (pathname === '/api/upload') {
       await handleUpload(req, res, url);
       return;
@@ -745,6 +816,8 @@ function stop() {
   wraps.length = 0;
   seenNotes.clear();
   seenWrapParcels.clear();
+  games.length = 0;
+  seenGameParcels.clear();
   files.clear();
   sessions.clear();
   roomWord = '';
