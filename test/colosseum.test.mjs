@@ -8,33 +8,61 @@ import {
   START_COINS,
   TYPING_PHRASE,
   WIN_PAY,
+  CAT_COINS,
+  DRINK_PRICE,
+  ERRAND_PAY,
+  MARKET,
+  MARKET_PAY,
+  PART_PRICE,
+  TAVERN,
+  WORK_SECONDS,
+  applyCatLoot,
   applyHit,
   applyPurse,
   arenaMap,
+  acceptTrade,
   beamSegment,
+  besidePlace,
+  buyDrink,
+  buyPart,
+  catLoot,
+  catStruck,
   clampArena,
   bindOpenBets,
   bulletHitsRect,
   circleAt,
   circleHitsRect,
   clickWin,
+  declineTrade,
+  dropOffer,
   duelOutcome,
   emptySave,
   fireGun,
+  giveItem,
   hitCircle,
+  homeChord,
+  homeWorld,
   latestPostcards,
+  mayEnter,
+  nextPatchCost,
   moveFavourite,
+  offerTrade,
   onBridge,
   orderFavourites,
+  pinErrand,
   placeBet,
+  placeFurniture,
   purchase,
   rankBoard,
   releaseEscrow,
+  releaseOffers,
+  rollCat,
   resolveBeam,
   resolveShots,
   respawn,
   sanitiseSave,
   scoreClick,
+  sellGood,
   setAlly,
   settleBets,
   sparkSide,
@@ -42,10 +70,14 @@ import {
   stepActor,
   stepBeam,
   tabSwitchesWalking,
+  tickWorks,
+  turnInErrand,
   walkingIntent,
   transferIn,
   transferOut,
+  toggleInvite,
   typingWin,
+  unlockPatch,
   withinReach,
   worldMap,
 } from '../public/colosseum-logic.mjs';
@@ -286,6 +318,40 @@ test('left shift climbs only on a ladder, and tab leaves other text fields alone
   assert.equal(tabSwitchesWalking({ inRoom: true, field: { id: 'look', text: true, settings: true } }), false);
 });
 
+test('home starts as one patch, and locked ground refuses furniture', () => {
+  const save = emptySave();
+  assert.equal(save.patches, 1);
+  assert.deepEqual(save.invites, []);
+  assert.equal(mayEnter(save.invites, 'Bea'), false);
+  assert.equal(homeChord({ key: 'Tab', shift: true }), true);
+  assert.equal(homeChord({ key: 'Tab', shift: false }), false);
+  const bought = purchase({ ...save, coins: 30 }, 'crate');
+  assert.equal(bought.ok, true);
+  assert.equal(bought.save.furniture.length, 1);
+  assert.ok(bought.save.furniture[0].x < 24 + 112);
+  const blocked = placeFurniture(bought.save, 'crate', 400);
+  assert.equal(blocked.ok, false);
+  assert.equal(blocked.reason, 'locked');
+  const poor = unlockPatch({ ...bought.save, coins: 2 });
+  assert.equal(poor.ok, false);
+  assert.equal(poor.save.patches, 1);
+  const opened = unlockPatch({ ...bought.save, coins: nextPatchCost(1) });
+  assert.equal(opened.ok, true);
+  assert.equal(opened.save.patches, 2);
+  const invited = toggleInvite(opened.save.invites, 'Bea');
+  assert.deepEqual(invited, ['Bea']);
+  assert.equal(mayEnter(invited, 'Bea'), true);
+  assert.equal(mayEnter(toggleInvite(invited, 'Bea'), 'Bea'), false);
+  const kept = sanitiseSave({ ...opened.save, invites: invited, roomWord: 'nope', messages: [{ text: 'secret' }] });
+  assert.deepEqual(kept.invites, ['Bea']);
+  assert.equal(JSON.stringify(kept).includes('nope'), false);
+  assert.equal(JSON.stringify(kept).includes('secret'), false);
+  const station = homeWorld(1);
+  let walker = { x: 40, y: station.ground - 74, vx: 0, vy: 0, w: 56, h: 74, onGround: true, facing: 1 };
+  for (let i = 0; i < 40; i += 1) walker = stepActor(walker, { right: true }, station, 0.05);
+  assert.ok(walker.x + walker.w <= 24 + 112 + 2);
+});
+
 test('the upper ground continues across the gap between the margins', () => {
   const world = worldMap();
   let actor = spawnActor(world);
@@ -317,4 +383,89 @@ test('a fenced match keeps the fighter inside and sends them back to the start l
   assert.ok(fence.covers.length >= 2);
   assert.equal(withinReach({ x: 0, y: 0, w: 20, h: 20 }, { x: 30, y: 0, w: 20, h: 20 }), true);
   assert.equal(withinReach({ x: 0, y: 0, w: 20, h: 20 }, { x: 200, y: 0, w: 20, h: 20 }), false);
+});
+
+test('a trade waits for the other person, and a closed room returns the offer', () => {
+  const stocked = giveItem(emptySave(), 'rock', 1).save;
+  const offered = offerTrade(stocked, 'rock', 1, 'Bea', 't1');
+  assert.equal(offered.ok, true);
+  assert.equal(offered.save.bag.rock, 0);
+  assert.equal(offered.save.offers.length, 1);
+  const theirs = acceptTrade(emptySave(), 'rock', 1).save;
+  assert.equal(theirs.bag.rock, 1);
+  const kept = dropOffer(offered.save, 't1');
+  assert.equal(kept.offers.length, 0);
+  assert.equal(kept.bag.rock, 0);
+  const returned = releaseOffers(offered.save);
+  assert.equal(returned.bag.rock, 1);
+  assert.equal(returned.offers.length, 0);
+  const declined = declineTrade(offered.save, 't1');
+  assert.equal(declined.ok, true);
+  assert.equal(declined.save.bag.rock, 1);
+  const sold = sellGood(stocked, 'rock');
+  assert.equal(sold.ok, true);
+  assert.equal(sold.paid, MARKET_PAY);
+  assert.equal(sold.save.coins, stocked.coins + MARKET_PAY);
+  const part = buyPart({ ...emptySave(), coins: PART_PRICE }, 'dust');
+  assert.equal(part.ok, true);
+  assert.equal(part.save.bag.dust, 1);
+  assert.equal(part.save.coins, 0);
+  const stripped = sanitiseSave({ ...sold.save, roomWord: 'nope', messages: [{ text: 'secret' }] });
+  assert.equal(JSON.stringify(stripped).includes('nope'), false);
+  assert.equal(JSON.stringify(stripped).includes('secret'), false);
+});
+
+test('home works pause when the page is closed and need an open patch', () => {
+  let save = giveItem({ ...emptySave(), patches: 1, coins: 20 }, 'dust', 1).save;
+  const paused = tickWorks(save, WORK_SECONDS, { open: false });
+  assert.equal(paused.bag.dust, 1);
+  assert.equal(paused.works.mine.loaded, false);
+  const locked = tickWorks(save, WORK_SECONDS, { open: true });
+  assert.equal(locked.bag.dust, 1);
+  assert.equal(locked.bag.rock, 0);
+  save = { ...save, patches: 2 };
+  const started = tickWorks(save, 1, { open: true });
+  assert.equal(started.bag.dust, 0);
+  assert.equal(started.works.mine.loaded, true);
+  const done = tickWorks(started, WORK_SECONDS, { open: true });
+  assert.equal(done.bag.rock, 1);
+  assert.equal(done.works.mine.loaded, false);
+  assert.equal(done.works.studio.loaded, false);
+});
+
+test('the tavern pays more than the market, and cats stay off a home visit', () => {
+  const world = worldMap();
+  const actor = { ...spawnActor(world), x: TAVERN.x, y: 200, w: 56, h: 74 };
+  assert.equal(besidePlace(actor, TAVERN), true);
+  assert.equal(besidePlace({ ...actor, x: MARKET.x }, MARKET), true);
+  assert.equal(besidePlace(actor, MARKET), false);
+  let save = pinErrand(giveItem(emptySave(), 'snack', 1).save, 'snack').save;
+  assert.equal(save.errand, 'snack');
+  const paid = turnInErrand(save);
+  assert.equal(paid.ok, true);
+  assert.equal(paid.paid, ERRAND_PAY);
+  assert.ok(ERRAND_PAY > MARKET_PAY);
+  assert.equal(paid.save.errand, '');
+  assert.equal(paid.save.bag.snack, 0);
+  const drink = buyDrink({ ...emptySave(), coins: DRINK_PRICE });
+  assert.equal(drink.ok, true);
+  assert.equal(drink.save.coins, 0);
+  const broke = buyDrink(drink.save);
+  assert.equal(broke.ok, false);
+  assert.equal(rollCat({ walking: true, atHome: true, hasCat: false, roll: 0.01 }), null);
+  assert.equal(rollCat({ walking: false, atHome: false, hasCat: false, roll: 0.01 }), null);
+  const cat = rollCat({ walking: true, atHome: false, hasCat: false, roll: 0.01, ground: world.ground });
+  assert.equal(cat.side, 'left');
+  const miss = catStruck(cat, [{ x: cat.x + 80, y: cat.y, r: 3 }]);
+  assert.equal(miss.hit, false);
+  const hit = catStruck(cat, [{ x: cat.x + 4, y: cat.y + 4, r: 3 }]);
+  assert.equal(hit.hit, true);
+  assert.equal(hit.shots.length, 0);
+  const loot = catLoot(0.01);
+  assert.equal(loot.coins, CAT_COINS);
+  assert.equal(loot.part, 'dust');
+  const rich = applyCatLoot(emptySave(), loot);
+  assert.equal(rich.coins, START_COINS + CAT_COINS);
+  assert.equal(rich.bag.dust, 1);
+  assert.equal(catLoot(0.9).part, '');
 });

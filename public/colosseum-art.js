@@ -123,6 +123,33 @@ export function paintMargin(ctx, width, height, side, world, view, region, extra
       block(ctx, c.x, c.y, cover.w * view.scale, cover.h * view.scale, '#6d7c99', '#3d4a63');
     }
   }
+
+  for (const door of extras.doors || []) {
+    if (door.x + door.w < region.x || door.x > region.x + region.w) continue;
+    const at = worldToLane(door.x, world.ground - 72, view, region);
+    ctx.fillStyle = door.id === 'tavern' ? '#c45c4a' : '#3ec6c6';
+    ctx.fillRect(at.x, at.y, door.w * view.scale, 72 * view.scale);
+    ctx.fillStyle = '#241c18';
+    ctx.fillRect(at.x + 12 * view.scale, at.y + 30 * view.scale, 18 * view.scale, 42 * view.scale);
+  }
+  for (const cat of extras.cats || []) {
+    if (cat.x < region.x || cat.x > region.x + region.w) continue;
+    const at = worldToLane(cat.x, cat.y, view, region);
+    paintAlienCat(ctx, at.x, at.y, view.scale);
+  }
+}
+
+function paintAlienCat(ctx, x, y, scale) {
+  const s = Math.max(2, 3 * scale);
+  ctx.fillStyle = '#7dcea0';
+  ctx.fillRect(x, y + s, s * 8, s * 4);
+  ctx.fillStyle = '#f4f0e6';
+  ctx.fillRect(x + s, y, s, s);
+  ctx.fillRect(x + s * 3, y, s, s);
+  ctx.fillRect(x + s * 6, y, s, s);
+  ctx.fillStyle = '#241c18';
+  ctx.fillRect(x + s, y + s * 5, s, s * 2);
+  ctx.fillRect(x + s * 6, y + s * 5, s, s * 2);
 }
 
 function paintProp(ctx, id, x, y, scale) {
@@ -335,4 +362,63 @@ export function paintBeamLine(ctx, x0, y0, x1, y1) {
   ctx.lineTo(x1, y1);
   ctx.stroke();
   ctx.lineWidth = 1;
+}
+
+export function paintHome(ctx, width, height, view, region, station, extras) {
+  ctx.clearRect(0, 0, width, height);
+  ctx.imageSmoothingEnabled = false;
+  const sky = worldToLane(region.x, 16, view, region);
+  ctx.fillStyle = '#2c261c';
+  ctx.fillRect(sky.x, sky.y, view.viewW, view.viewH * 0.72);
+  const patches = extras.patches || [];
+  const openCount = extras.openCount || 1;
+  patches.forEach((patch, index) => {
+    if (patch.x + patch.w < region.x || patch.x > region.x + region.w) return;
+    const ground = worldToLane(patch.x, station.ground, view, region);
+    const end = worldToLane(patch.x + patch.w, station.ground, view, region);
+    const open = index < openCount;
+    ctx.fillStyle = open ? '#e4d3ae' : '#4a4034';
+    ctx.fillRect(ground.x, ground.y, Math.max(4, end.x - ground.x), 8);
+    if (!open) {
+      ctx.fillStyle = '#2a241c';
+      for (let mark = 6; mark < patch.w; mark += 14) {
+        const hatch = worldToLane(patch.x + mark, station.ground, view, region);
+        ctx.fillRect(hatch.x, hatch.y + 2, 4, 4);
+      }
+      const ruin = worldToLane(patch.x + 12, station.ground - 48, view, region);
+      ctx.fillStyle = '#5c5144';
+      ctx.fillRect(ruin.x, ruin.y, 18 * view.scale, 48 * view.scale);
+      ctx.clearRect(ruin.x + 6 * view.scale, ruin.y + 10 * view.scale, 8 * view.scale, 14 * view.scale);
+    }
+  });
+  const hull = worldToLane(430, 150, view, region);
+  if (hull.x < width && hull.x + 80 > 0) {
+    ctx.fillStyle = '#6a5a48';
+    ctx.fillRect(hull.x, hull.y, 70 * view.scale, 28 * view.scale);
+    ctx.fillStyle = '#3e3428';
+    ctx.fillRect(hull.x + 46 * view.scale, hull.y - 22 * view.scale, 6 * view.scale, 24 * view.scale);
+    ctx.fillRect(hull.x + 18 * view.scale, hull.y + 8 * view.scale, 16 * view.scale, 10 * view.scale);
+  }
+  const door = worldToLane(8, station.ground - 52, view, region);
+  if (door.x > -20 && door.x < width) {
+    ctx.fillStyle = extras.doorOpen ? '#c4b496' : '#241c16';
+    ctx.fillRect(door.x, door.y, 16 * view.scale, 52 * view.scale);
+    ctx.fillStyle = '#d7c4a2';
+    ctx.fillRect(door.x + (extras.doorOpen ? 4 : 10) * view.scale, door.y + 24 * view.scale, 3, 3);
+  }
+  for (const spec of extras.works || []) {
+    const patch = patches[spec.patch - 1];
+    if (!patch || spec.patch > openCount) continue;
+    if (patch.x + patch.w < region.x || patch.x > region.x + region.w) continue;
+    const at = worldToLane(patch.x + 16, station.ground - 36, view, region);
+    ctx.fillStyle = spec.id === 'mine' ? '#9ad7ff' : spec.id === 'studio' ? '#b48cff' : '#f0c14a';
+    ctx.fillRect(at.x, at.y, 26 * view.scale, 28 * view.scale);
+    ctx.fillStyle = '#241c18';
+    ctx.fillRect(at.x + 6 * view.scale, at.y + 8 * view.scale, 8 * view.scale, 8 * view.scale);
+  }
+  for (const piece of extras.furniture || []) {
+    if (piece.x < region.x || piece.x > region.x + region.w) continue;
+    const at = worldToLane(piece.x, piece.y, view, region);
+    paintProp(ctx, piece.id, at.x, at.y, view.scale);
+  }
 }

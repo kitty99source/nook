@@ -43,6 +43,38 @@ export const GUNS = {
   beam: { length: 168, drain: 0.55, recharge: 0.28 },
 };
 
+export const PART_PRICE = 4;
+export const MARKET_PAY = 8;
+export const ERRAND_PAY = 12;
+export const DRINK_PRICE = 3;
+export const CAT_COINS = 2;
+export const WORK_SECONDS = 8;
+
+export const PARTS = [
+  { id: 'dust', name: 'Moon dust' },
+  { id: 'reel', name: 'Film reel' },
+  { id: 'syrup', name: 'Syrup' },
+];
+
+export const GOODS = [
+  { id: 'rock', name: 'Moon rock' },
+  { id: 'video', name: 'Cat video' },
+  { id: 'snack', name: 'Vat snack' },
+];
+
+export const WORKS = [
+  { id: 'mine', name: 'Moon mine', patch: 2, part: 'dust', good: 'rock' },
+  { id: 'studio', name: 'Cat-video studio', patch: 3, part: 'reel', good: 'video' },
+  { id: 'vat', name: 'Snack vat', patch: 4, part: 'syrup', good: 'snack' },
+];
+
+export const TAVERN = { id: 'tavern', x: 64, w: 56 };
+export const MARKET = { id: 'market', x: 540, w: 64 };
+
+const BAG_IDS = new Set([...PARTS, ...GOODS].map((item) => item.id));
+const PART_IDS = new Set(PARTS.map((item) => item.id));
+const GOOD_IDS = new Set(GOODS.map((item) => item.id));
+
 const CATALOG_IDS = new Set(CATALOG.map((item) => item.id));
 const WEAR_IDS = new Set(CATALOG.filter((item) => item.kind === 'wear').map((item) => item.id));
 const PICTURE_IDS = new Set(CATALOG.filter((item) => item.kind === 'picture').map((item) => item.id));
@@ -289,6 +321,97 @@ function stringList(value, limit) {
   return out;
 }
 
+export const HOME_PATCHES = [
+  { x: 24, w: 112, cost: 0 },
+  { x: 136, w: 120, cost: 10 },
+  { x: 256, w: 130, cost: 14 },
+  { x: 386, w: 150, cost: 18 },
+];
+
+export function unlockedSpan(patches) {
+  const count = Math.min(HOME_PATCHES.length, Math.max(1, whole(patches) || 1));
+  const open = HOME_PATCHES.slice(0, count);
+  const x = open[0].x;
+  const end = open[open.length - 1].x + open[open.length - 1].w;
+  return { x, w: end - x, count };
+}
+
+export function nextPatchCost(patches) {
+  const count = Math.min(HOME_PATCHES.length, Math.max(1, whole(patches) || 1));
+  const next = HOME_PATCHES[count];
+  return next ? next.cost : 0;
+}
+
+export function homeWorld(patches = 1) {
+  const span = unlockedSpan(patches);
+  const w = 560;
+  const h = 340;
+  const ground = 250;
+  return {
+    w,
+    h,
+    ground,
+    platforms: [],
+    ladders: [{ x: span.x + 10, y: ground - 72, w: 16, h: 72 }],
+    walls: [
+      { x: 0, y: 0, w: Math.max(8, span.x), h },
+      { x: span.x + span.w, y: 0, w: Math.max(8, w - span.x - span.w), h },
+    ],
+  };
+}
+
+export function homeSlice(side) {
+  return side === 'left' ? { x: 0, w: 280 } : { x: 280, w: 280 };
+}
+
+function placedFurniture(save, id) {
+  const span = unlockedSpan(save.patches);
+  const x = span.x + 18 + save.furniture.length * 34;
+  if (x > span.x + span.w - 24) return save.furniture;
+  return [...save.furniture, { id, x, y: 214 }];
+}
+
+export function placeFurniture(save, id, x) {
+  const current = sanitiseSave(save);
+  const item = CATALOG.find((row) => row.id === id);
+  if (!item || item.kind !== 'furniture' || !current.owned.includes(id)) {
+    return { ok: false, save: current, reason: 'owned' };
+  }
+  const span = unlockedSpan(current.patches);
+  const spot = Math.round(Number(x));
+  if (!Number.isFinite(spot) || spot < span.x || spot > span.x + span.w - 24) {
+    return { ok: false, save: current, reason: 'locked' };
+  }
+  const furniture = current.furniture.filter((piece) => piece.id !== id);
+  furniture.push({ id, x: spot, y: 214 });
+  return { ok: true, save: sanitiseSave({ ...current, furniture }) };
+}
+
+export function unlockPatch(save) {
+  const current = sanitiseSave(save);
+  const cost = nextPatchCost(current.patches);
+  if (!cost) return { ok: false, save: current, reason: 'done' };
+  const sale = buy(current.coins, cost);
+  if (!sale.ok) return { ok: false, save: current, reason: 'purse' };
+  return { ok: true, save: sanitiseSave({ ...current, coins: sale.coins, patches: current.patches + 1 }) };
+}
+
+export function toggleInvite(invites, name) {
+  const clean = String(name || '').trim();
+  const list = stringList(invites, 8).filter((item) => item !== clean);
+  if (!clean || stringList(invites, 8).includes(clean)) return list;
+  return stringList([...list, clean], 8);
+}
+
+export function mayEnter(invites, name) {
+  return stringList(invites, 8).includes(String(name || '').trim());
+}
+
+export function homeChord(input) {
+  const key = input && input.key;
+  return key === 'Tab' && !!input.shift && !input.alt && !input.meta && !input.ctrl;
+}
+
 export function emptySave() {
   return sanitiseSave({ coins: START_COINS, cityOn: true });
 }
@@ -344,6 +467,12 @@ export function sanitiseSave(raw) {
     owned,
     pictures,
     furniture,
+    patches: Math.min(HOME_PATCHES.length, Math.max(1, whole(src.patches) || 1)),
+    invites: stringList(src.invites, 8),
+    bag: readBag(src.bag),
+    works: readWorks(src.works),
+    offers: readOffers(src.offers),
+    errand: GOOD_IDS.has(src.errand) ? src.errand : '',
     cityOn: src.cityOn !== false,
     escrow,
     bets,
@@ -365,11 +494,222 @@ export function purchase(save, id) {
     owned: [...current.owned, id],
     worn: item.kind === 'wear' && !current.worn ? id : current.worn,
     pictures: item.kind === 'picture' ? [...current.pictures, id] : current.pictures,
-    furniture: item.kind === 'furniture'
-      ? [...current.furniture, { id, x: 48 + current.furniture.length * 52, y: 200 }]
-      : current.furniture,
+    furniture: item.kind === 'furniture' ? placedFurniture(current, id) : current.furniture,
   });
   return { ok: true, save: next };
+}
+
+function blankBag() {
+  const bag = {};
+  for (const id of BAG_IDS) bag[id] = 0;
+  return bag;
+}
+
+function readBag(raw) {
+  const bag = blankBag();
+  const src = raw && typeof raw === 'object' ? raw : {};
+  for (const id of BAG_IDS) bag[id] = Math.min(24, whole(src[id]));
+  return bag;
+}
+
+function blankWorks() {
+  const works = {};
+  for (const spec of WORKS) works[spec.id] = { progress: 0, loaded: false };
+  return works;
+}
+
+function readProgress(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0) return 0;
+  return Math.min(WORK_SECONDS, n);
+}
+
+function readWorks(raw) {
+  const works = blankWorks();
+  const src = raw && typeof raw === 'object' ? raw : {};
+  for (const spec of WORKS) {
+    const row = src[spec.id] && typeof src[spec.id] === 'object' ? src[spec.id] : {};
+    works[spec.id] = { progress: readProgress(row.progress), loaded: row.loaded === true };
+  }
+  return works;
+}
+
+function readOffers(raw) {
+  if (!Array.isArray(raw)) return [];
+  const offers = [];
+  for (const offer of raw) {
+    const item = String(offer && offer.item || '');
+    const count = Math.min(8, whole(offer && offer.count));
+    const id = String(offer && offer.id || '').slice(0, 40);
+    const to = String(offer && offer.to || '').trim().slice(0, 40);
+    if (!BAG_IDS.has(item) || count < 1 || !id || !to) continue;
+    offers.push({ id, item, count, to });
+    if (offers.length >= 8) break;
+  }
+  return offers;
+}
+
+export function giveItem(save, item, count = 1) {
+  const current = sanitiseSave(save);
+  const n = whole(count);
+  if (!BAG_IDS.has(item) || n < 1) return { ok: false, save: current, reason: 'item' };
+  const bag = { ...current.bag, [item]: Math.min(24, current.bag[item] + n) };
+  return { ok: true, save: sanitiseSave({ ...current, bag }) };
+}
+
+export function offerTrade(save, item, count, to, id) {
+  const current = sanitiseSave(save);
+  const n = Math.min(8, whole(count));
+  const cleanTo = String(to || '').trim().slice(0, 40);
+  const offerId = String(id || '').slice(0, 40);
+  if (!BAG_IDS.has(item) || n < 1 || !cleanTo || !offerId) {
+    return { ok: false, save: current, reason: 'item' };
+  }
+  if (current.bag[item] < n) return { ok: false, save: current, reason: 'bag' };
+  const bag = { ...current.bag, [item]: current.bag[item] - n };
+  const offers = [...current.offers, { id: offerId, item, count: n, to: cleanTo }];
+  return { ok: true, save: sanitiseSave({ ...current, bag, offers }) };
+}
+
+export function acceptTrade(save, item, count) {
+  return giveItem(save, item, count);
+}
+
+export function dropOffer(save, id) {
+  const current = sanitiseSave(save);
+  return sanitiseSave({ ...current, offers: current.offers.filter((offer) => offer.id !== id) });
+}
+
+export function declineTrade(save, id) {
+  const current = sanitiseSave(save);
+  const offer = current.offers.find((item) => item.id === id);
+  if (!offer) return { ok: false, save: current, reason: 'offer' };
+  const back = giveItem(current, offer.item, offer.count);
+  return {
+    ok: true,
+    save: sanitiseSave({ ...back.save, offers: current.offers.filter((item) => item.id !== id) }),
+  };
+}
+
+export function releaseOffers(save) {
+  let current = sanitiseSave(save);
+  for (const offer of [...current.offers]) current = giveItem(current, offer.item, offer.count).save;
+  return sanitiseSave({ ...current, offers: [] });
+}
+
+export function buyPart(save, item) {
+  const current = sanitiseSave(save);
+  if (!PART_IDS.has(item)) return { ok: false, save: current, reason: 'item' };
+  const sale = buy(current.coins, PART_PRICE);
+  if (!sale.ok) return { ok: false, save: current, reason: 'purse' };
+  return giveItem({ ...current, coins: sale.coins }, item, 1);
+}
+
+export function sellGood(save, item) {
+  const current = sanitiseSave(save);
+  if (!GOOD_IDS.has(item)) return { ok: false, save: current, reason: 'good' };
+  if (current.bag[item] < 1) return { ok: false, save: current, reason: 'bag' };
+  const bag = { ...current.bag, [item]: current.bag[item] - 1 };
+  return { ok: true, save: sanitiseSave({ ...current, bag, coins: current.coins + MARKET_PAY }), paid: MARKET_PAY };
+}
+
+export function buyDrink(save) {
+  const current = sanitiseSave(save);
+  const sale = buy(current.coins, DRINK_PRICE);
+  if (!sale.ok) return { ok: false, save: current, reason: 'purse' };
+  return { ok: true, save: sanitiseSave({ ...current, coins: sale.coins }) };
+}
+
+export function pinErrand(save, goodId) {
+  const current = sanitiseSave(save);
+  if (current.errand) return { ok: true, save: current };
+  const good = GOOD_IDS.has(goodId) ? goodId : GOODS[0].id;
+  return { ok: true, save: sanitiseSave({ ...current, errand: good }) };
+}
+
+export function turnInErrand(save) {
+  const current = sanitiseSave(save);
+  if (!current.errand) return { ok: false, save: current, reason: 'none' };
+  if (current.bag[current.errand] < 1) return { ok: false, save: current, reason: 'bag' };
+  const bag = { ...current.bag, [current.errand]: current.bag[current.errand] - 1 };
+  return {
+    ok: true,
+    save: sanitiseSave({ ...current, bag, coins: current.coins + ERRAND_PAY, errand: '' }),
+    paid: ERRAND_PAY,
+  };
+}
+
+export function tickWorks(save, dt, { open = true } = {}) {
+  const current = sanitiseSave(save);
+  if (!open || !(Number(dt) > 0)) return current;
+  const bag = { ...current.bag };
+  const works = { ...current.works };
+  for (const spec of WORKS) {
+    const state = { ...works[spec.id] };
+    if (current.patches < spec.patch) {
+      works[spec.id] = state;
+      continue;
+    }
+    if (!state.loaded) {
+      if (bag[spec.part] < 1) {
+        works[spec.id] = state;
+        continue;
+      }
+      bag[spec.part] -= 1;
+      state.loaded = true;
+      state.progress = 0;
+    }
+    state.progress = Math.min(WORK_SECONDS, state.progress + Number(dt));
+    if (state.progress >= WORK_SECONDS) {
+      bag[spec.good] = Math.min(24, bag[spec.good] + 1);
+      state.loaded = false;
+      state.progress = 0;
+    }
+    works[spec.id] = state;
+  }
+  return sanitiseSave({ ...current, bag, works });
+}
+
+export function besidePlace(actor, place, reach = 56) {
+  if (!actor || !place) return false;
+  return withinReach(actor, { x: place.x, y: actor.y, w: place.w, h: actor.h }, reach);
+}
+
+export function rollCat({ walking, atHome, hasCat, roll, ground = 280 } = {}) {
+  if (!walking || atHome || hasCat) return null;
+  const n = Number(roll);
+  if (!Number.isFinite(n) || n >= 0.25) return null;
+  const left = n < 0.125;
+  return { x: left ? 150 : 620, y: ground - 28, w: 36, h: 28, side: left ? 'left' : 'right' };
+}
+
+export function catLoot(roll) {
+  const n = Number(roll);
+  let part = '';
+  if (n < 0.15) part = 'dust';
+  else if (n < 0.3) part = 'reel';
+  else if (n < 0.45) part = 'syrup';
+  return { coins: CAT_COINS, part };
+}
+
+export function applyCatLoot(save, loot) {
+  const current = sanitiseSave(save);
+  const coins = current.coins + purse(loot && loot.coins);
+  const next = sanitiseSave({ ...current, coins });
+  if (loot && loot.part) return giveItem(next, loot.part, 1).save;
+  return next;
+}
+
+export function catStruck(cat, shots) {
+  if (!cat) return { hit: false, shots: shots || [] };
+  const body = { x: cat.x, y: cat.y, w: cat.w, h: cat.h };
+  const left = [];
+  let hit = false;
+  for (const shot of shots || []) {
+    if (!hit && circleHitsRect(shot.x, shot.y, shot.r || 3, body)) hit = true;
+    else left.push(shot);
+  }
+  return { hit, shots: left };
 }
 
 export function worldMap() {

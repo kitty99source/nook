@@ -154,6 +154,20 @@
   pointer-events: none;
 }
 
+.home-cue {
+  position: absolute;
+  z-index: 4;
+  left: 10px;
+  bottom: 36px;
+  pointer-events: none;
+  font-size: 12px;
+  color: var(--muted);
+  background: var(--paper);
+  border-radius: 999px;
+  padding: 3px 8px;
+  opacity: 0.88;
+}
+
 .walk-cue {
   position: absolute;
   z-index: 4;

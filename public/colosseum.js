@@ -6,39 +6,72 @@ import {
   CLICK_BOUNDS,
   COLOURS,
   EMOTE_REACH,
+  DRINK_PRICE,
   GAME_MS,
+  GOODS,
   GUNS,
+  HOME_PATCHES,
+  MARKET,
+  MARKET_PAY,
+  PARTS,
+  PART_PRICE,
+  TAVERN,
   TYPING_PHRASE,
+  WORKS,
+  acceptTrade,
+  applyCatLoot,
   applyHit,
   applyPurse,
   arenaMap,
+  homeSlice,
+  homeWorld,
+  besidePlace,
   bindOpenBets,
   bridgeProgress,
+  buyDrink,
+  buyPart,
+  catLoot,
+  catStruck,
   clampArena,
+  declineTrade,
+  dropOffer,
   duelOutcome,
   emptySave,
   fireGun,
+  mayEnter,
+  nextPatchCost,
+  offerTrade,
   onBridge,
   orderFavourites,
+  pinErrand,
   placeBet,
+  placeFurniture,
   purchase,
   rankBoard,
   releaseEscrow,
+  releaseOffers,
   resolveBeam,
+  rollCat,
   resolveShots,
   respawn,
   sanitiseSave,
   scoreClick,
+  sellGood,
   setAlly,
   settleBets,
   sparkSide,
   spawnActor,
   stepActor,
   stepBeam,
+  stepBullet,
   tabSwitchesWalking,
+  tickWorks,
+  toggleInvite,
   transferIn,
   transferOut,
+  turnInErrand,
   typingWin,
+  unlockPatch,
   walkingIntent,
   withinReach,
   worldMap,
@@ -53,6 +86,7 @@ import {
   paintBeamLine,
   paintBridge,
   paintFace,
+  paintHome,
   paintGun,
   paintMargin,
   paintShot,
@@ -92,6 +126,20 @@ let emoteUntil = 0;
 let status = '';
 let tab = 'games';
 let offer = null;
+let atHome = false;
+let visitHost = null;
+let citySpot = null;
+let shiftArmed = 0;
+const homes = new Map();
+const visitors = new Map();
+let streetCat = null;
+const streetShots = [];
+let streetGun = 'rifle';
+let streetCool = 0;
+let catClock = 0;
+let tradeOffer = null;
+let doorSig = '';
+let workStamp = 0;
 
 const els = {};
 
@@ -121,8 +169,50 @@ function focusSnapshot() {
 }
 
 function paintCue() {
-  if (!els.cue) return;
-  els.cue.hidden = !walking;
+  if (els.cue) els.cue.hidden = !walking;
+  if (!els.homeCue) return;
+  const visiting = visitHost && visitHost.name;
+  els.homeCue.hidden = !atHome && !visiting;
+  if (els.homeCue.hidden) return;
+  const door = (atHome ? save.invites : []).length ? 'door open' : 'door shut';
+  els.homeCue.textContent = visiting ? `Visiting ${visiting}` : `Home · ${door}`;
+}
+
+function publishHome() {
+  publish('home', {
+    open: atHome,
+    invites: save.invites,
+    patches: save.patches,
+    works: save.works,
+    furniture: save.furniture,
+    name: myName(),
+    x: Math.round(actor.x),
+    y: Math.round(actor.y),
+    colour: save.colour,
+  });
+}
+
+function toggleHome() {
+  if (atHome || visitHost) {
+    atHome = false;
+    visitHost = null;
+    visitors.clear();
+    if (citySpot) {
+      actor.x = citySpot.x;
+      actor.y = citySpot.y;
+    }
+    publish('home', { open: false, invites: save.invites, name: myName() });
+  } else {
+    citySpot = { x: actor.x, y: actor.y };
+    const station = homeWorld(save.patches || 1);
+    actor.x = 36;
+    actor.y = station.ground - actor.h;
+    actor.vx = 0;
+    actor.vy = 0;
+    atHome = true;
+    publishHome();
+  }
+  paintCue();
 }
 
 function enterWalking() {
@@ -140,8 +230,24 @@ function leaveWalking() {
   if (box && roomOpen()) box.focus();
 }
 
+function walkName(event) {
+  const byCode = { KeyW: 'w', KeyA: 'a', KeyS: 's', KeyD: 'd', Space: 'space', ShiftLeft: 'shift' }[event.code];
+  if (byCode) return byCode;
+  if (event.key === 'Shift' && event.location === 1) return 'shift';
+  return { w: 'w', a: 'a', s: 's', d: 'd', ' ': 'space' }[event.key] || '';
+}
+
 function onKeyDown(event) {
-  if (event.key === 'Tab' && !event.altKey && !event.metaKey && !event.ctrlKey) {
+  if (event.key === 'Tab' && event.shiftKey && !event.altKey && !event.metaKey && !event.ctrlKey) {
+    if (!tabSwitchesWalking(focusSnapshot())) return;
+    event.preventDefault();
+    event.stopPropagation();
+    held.shift = false;
+    shiftArmed = 0;
+    toggleHome();
+    return;
+  }
+  if (event.key === 'Tab' && !event.shiftKey && !event.altKey && !event.metaKey && !event.ctrlKey) {
     if (!tabSwitchesWalking(focusSnapshot())) return;
     event.preventDefault();
     event.stopPropagation();
@@ -150,8 +256,14 @@ function onKeyDown(event) {
     return;
   }
   if (!walking) return;
-  const name = { KeyW: 'w', KeyA: 'a', KeyS: 's', KeyD: 'd', Space: 'space', ShiftLeft: 'shift' }[event.code];
-  if (!name) return;
+  if (event.code === 'ShiftLeft' || (event.key === 'Shift' && event.location === 1)) {
+    shiftArmed = performance.now();
+    event.preventDefault();
+    event.stopPropagation();
+    return;
+  }
+  const name = walkName(event);
+  if (!name || name === 'shift') return;
   const field = focusSnapshot().field;
   if (field && field.text && field.id !== 'text') return;
   event.preventDefault();
@@ -160,8 +272,12 @@ function onKeyDown(event) {
 }
 
 function onKeyUp(event) {
-  const name = { KeyW: 'w', KeyA: 'a', KeyS: 's', KeyD: 'd', Space: 'space', ShiftLeft: 'shift' }[event.code];
-  if (name) held[name] = false;
+  if (event.code === 'ShiftLeft' || (event.key === 'Shift' && event.location !== 2)) {
+    held.shift = false;
+    shiftArmed = 0;
+  }
+  const name = walkName(event);
+  if (name && name !== 'shift') held[name] = false;
 }
 
 function persist() {
@@ -248,6 +364,7 @@ function applyParcel(payload, row) {
     rememberCard({ memberId: payload.from, name: body.name, coins: body.coins, wins: body.wins, seq: payload.seq });
   } else if (payload.kind === 'place') {
     applied.add(key);
+    if (payload.from === me()) return;
     others.set(payload.from, { ...body, id: payload.from, at: Date.now() });
   } else if (payload.kind === 'send' && body.to === me()) {
     applied.add(key);
@@ -290,6 +407,33 @@ function applyParcel(payload, row) {
     applied.add(key);
     const who = others.get(payload.from);
     if (who) who.emoteUntil = Date.now() + 1200;
+  } else if (payload.kind === 'trade' && body.to === me()) {
+    applied.add(key);
+    tradeOffer = { id: body.id, from: payload.from, name: body.name, item: body.item, count: body.count };
+    say(`${body.name} offered ${body.item}.`);
+  } else if (payload.kind === 'trade-accept' && body.to === me()) {
+    applied.add(key);
+    save = dropOffer(save, body.id);
+    persist();
+    say('They took it.');
+  } else if (payload.kind === 'trade-decline' && body.to === me()) {
+    applied.add(key);
+    const back = declineTrade(save, body.id);
+    if (back.ok) save = back.save;
+    persist();
+    say('The offer came back.');
+  } else if (payload.kind === 'drink' && body.to === me()) {
+    applied.add(key);
+    say(`${body.name} bought you a drink.`);
+  } else if (payload.kind === 'home' && payload.from !== me()) {
+    applied.add(key);
+    if (body.open === false || !mayEnter(body.invites, myName())) {
+      homes.delete(payload.from);
+      if (visitHost && visitHost.id === payload.from) leaveVisit();
+    } else homes.set(payload.from, { ...body, id: payload.from, at: Date.now() });
+  } else if (payload.kind === 'visit' && atHome && body.host === me() && mayEnter(save.invites, body.name)) {
+    applied.add(key);
+    visitors.set(payload.from, { ...body, id: payload.from, at: Date.now() });
   }
   if (els.pop && !els.pop.hidden && payload.kind !== 'place' && payload.kind !== 'shot' && payload.kind !== 'emote') paintPanel();
 }
@@ -372,11 +516,17 @@ function drawLane(canvas, side) {
     ctx.clearRect(0, 0, w, h);
     return box;
   }
+  if (atHome || visitHost) {
+    paintHomeLane(ctx, w, h, side);
+    return box;
+  }
   paintMargin(ctx, w, h, side, world, box.view, box.region, {
     furniture: save.furniture,
     pictures: side === 'left' ? save.pictures : [],
     fence: match && match.on ? fence : null,
     covers: match && match.on ? fence.covers : [],
+    doors: [TAVERN, MARKET],
+    cats: streetCat ? [streetCat] : [],
   });
   const drawOne = (person, colour, worn, gun) => {
     if (onBridge(person, world)) return;
@@ -392,7 +542,13 @@ function drawLane(canvas, side) {
   if (!(match && match.on && side === 'left') && !onBridge(actor, world)) {
     const region = box.region;
     const mid = actor.x + actor.w / 2;
-    if (mid >= region.x && mid < region.x + region.w) drawOne(actor, save.colour, save.worn, match && match.on ? match.gun : '');
+    const gun = match && match.on ? match.gun : (streetCat ? streetGun : '');
+    if (mid >= region.x && mid < region.x + region.w) drawOne(actor, save.colour, save.worn, gun);
+  }
+  for (const shot of streetShots) {
+    const at = worldToLane(shot.x, shot.y, box.view, box.region);
+    if (at.x < -20 || at.x > w + 20) continue;
+    paintShot(ctx, at.x, at.y, (shot.r || 3) * box.view.scale, shot.gun);
   }
   if (match && match.on && side === 'right') {
     for (const shot of shots) {
@@ -414,7 +570,7 @@ function drawLane(canvas, side) {
 
 function placeBridge() {
   if (!els.bridge) return;
-  const show = save.cityOn && onBridge(actor, world);
+  const show = save.cityOn && !atHome && !visitHost && onBridge(actor, world);
   els.bridge.hidden = !show;
   if (!show) return;
   const left = viewOf(document.querySelector('#lane-left'), 'left');
@@ -448,7 +604,7 @@ function nearestOther() {
 }
 
 function placeEmotes() {
-  const other = !match?.on && save.cityOn ? nearestOther() : null;
+  const other = !match?.on && save.cityOn && !atHome && !visitHost ? nearestOther() : null;
   els.emotes.hidden = !other;
   if (!other) return;
   const left = document.querySelector('#lane-left').getBoundingClientRect();
@@ -456,10 +612,70 @@ function placeEmotes() {
   els.emotes.style.top = `${left.bottom - 78}px`;
 }
 
+function leaveVisit() {
+  visitHost = null;
+  if (citySpot) {
+    actor.x = citySpot.x;
+    actor.y = citySpot.y;
+  }
+  paintCue();
+}
+
+function shownHome() {
+  if (visitHost) return homes.get(visitHost.id) || null;
+  if (!atHome) return null;
+  return {
+    patches: save.patches,
+    furniture: save.furniture,
+    invites: save.invites,
+    works: save.works,
+  };
+}
+
+function paintHomeLane(ctx, w, h, side) {
+  const lane = document.querySelector(side === 'left' ? '#lane-left' : '#lane-right');
+  const rect = lane.getBoundingClientRect();
+  const reserved = measureReserved(lane, side === 'left' ? '.troupe' : '.affirm-card');
+  const shown = shownHome();
+  const station = homeWorld(shown?.patches || 1);
+  const region = homeSlice(side);
+  const view = layoutView(rect, region, station, reserved);
+  paintHome(ctx, w, h, view, region, station, {
+    patches: HOME_PATCHES,
+    openCount: shown?.patches || 1,
+    furniture: shown?.furniture || [],
+    doorOpen: (shown?.invites || []).length > 0,
+    works: WORKS,
+  });
+  const drawOne = (person, colour, worn) => {
+    const mid = person.x + person.w / 2;
+    if (mid < region.x || mid >= region.x + region.w) return;
+    const local = worldToLane(person.x, person.y, view, region);
+    paintActor(ctx, local.x, local.y, person.w * view.scale, person.h * view.scale, colour, worn, person.facing || 1);
+  };
+  if (visitHost && shown) {
+    drawOne({ x: shown.x || 40, y: shown.y || station.ground - actor.h, w: actor.w, h: actor.h, facing: 1 }, shown.colour || '#b48cff', '');
+  }
+  if (atHome) {
+    for (const guest of visitors.values()) {
+      if (Date.now() - guest.at > 4000) continue;
+      drawOne({ x: guest.x, y: guest.y, w: actor.w, h: actor.h, facing: guest.facing }, guest.colour || '#b48cff', '');
+    }
+  }
+  drawOne(actor, save.colour, save.worn);
+}
+
 function stepCity(dt) {
-  if (!save.cityOn) return;
+  if (shiftArmed && performance.now() - shiftArmed > 140) {
+    held.shift = true;
+    shiftArmed = 0;
+  }
+  const indoors = atHome || visitHost;
+  if (!save.cityOn && !indoors) return;
+  const map = indoors ? homeWorld((shownHome() || save).patches || save.patches || 1) : world;
   const intent = walking ? walkingIntent(held) : {};
-  actor = stepActor(actor, intent, world, dt);
+  actor = stepActor(actor, intent, map, dt);
+  if (indoors) return;
   if (match && match.on) {
     actor = clampArena(actor, fence);
     match.invuln = Math.max(0, (match.invuln || 0) - dt);
@@ -499,18 +715,174 @@ function stepCity(dt) {
   }
 }
 
+function stepWorks(dt, now) {
+  const before = `${save.bag.rock}:${save.bag.video}:${save.bag.snack}:${save.works.mine.loaded}:${save.works.studio.loaded}:${save.works.vat.loaded}`;
+  save = tickWorks(save, dt, { open: true });
+  const after = `${save.bag.rock}:${save.bag.video}:${save.bag.snack}:${save.works.mine.loaded}:${save.works.studio.loaded}:${save.works.vat.loaded}`;
+  const running = save.works.mine.loaded || save.works.studio.loaded || save.works.vat.loaded;
+  if (before !== after || (running && now - workStamp > 2000)) {
+    workStamp = now;
+    persist();
+  }
+}
+
+function stepStreet(dt) {
+  const quiet = atHome || visitHost || (match && match.on) || !walking || !save.cityOn;
+  if (quiet) {
+    if (streetCat || streetShots.length) paintHud();
+    streetCat = null;
+    streetShots.length = 0;
+    return;
+  }
+  catClock += dt;
+  if (!streetCat && catClock > 4) {
+    catClock = 0;
+    const born = rollCat({ walking: true, atHome: false, hasCat: false, roll: Math.random(), ground: world.ground });
+    if (born) {
+      streetCat = born;
+      paintHud();
+    }
+  }
+  const moved = streetShots.map((shot) => stepBullet(shot, dt)).filter((shot) => shot.life > 0);
+  streetShots.length = 0;
+  if (streetCat) {
+    const hit = catStruck(streetCat, moved);
+    streetShots.push(...hit.shots);
+    if (!hit.hit && streetGun === 'beam' && beamOn) {
+      const from = { x: actor.x + actor.w / 2, y: actor.y + actor.h * 0.45 };
+      if (resolveBeam(from, actor.facing, GUNS.beam.length, [], streetCat)) hit.hit = true;
+    }
+    if (hit.hit) {
+      const loot = catLoot(Math.random());
+      save = applyCatLoot(save, loot);
+      persist();
+      streetCat = null;
+      streetShots.length = 0;
+      say(loot.part ? `A cat left coins and a part.` : 'A cat left a few coins.');
+      paintHud();
+      paintPanel();
+    }
+  }
+  if (!(match && match.on) && streetGun === 'beam') {
+    const stepped = stepBeam(beam.energy, { firing: beamOn && !!streetCat, locked: beam.locked }, dt);
+    beam = { energy: stepped.energy, locked: stepped.locked };
+    if (!stepped.firing) beamOn = false;
+  }
+}
+
+function placeDoors() {
+  if (!els.doors) return;
+  const indoors = atHome || visitHost || (match && match.on) || !save.cityOn;
+  const tavern = !indoors && besidePlace(actor, TAVERN);
+  const market = !indoors && besidePlace(actor, MARKET);
+  const sig = `${tavern}:${market}:${save.coins}:${save.errand}:${save.bag.dust}:${save.bag.reel}:${save.bag.syrup}:${save.bag.rock}:${save.bag.video}:${save.bag.snack}`;
+  const lane = document.querySelector(tavern ? '#lane-left' : '#lane-right');
+  if (lane && (tavern || market)) {
+    const rect = lane.getBoundingClientRect();
+    els.doors.style.left = `${rect.left + 8}px`;
+    els.doors.style.top = `${rect.bottom - 86}px`;
+  }
+  els.doors.hidden = !tavern && !market;
+  if (sig === doorSig) return;
+  doorSig = sig;
+  els.doors.replaceChildren();
+  if (tavern) {
+    if (!save.errand) {
+      const goods = ['rock', 'video', 'snack'];
+      save = pinErrand(save, goods[Math.floor(Math.random() * goods.length)]).save;
+      persist();
+    }
+    els.doors.append(button(`Drink · ${DRINK_PRICE}`, () => {
+      const next = buyDrink(save);
+      if (!next.ok) say('The purse cannot cover a drink.');
+      else {
+        save = next.save;
+        persist();
+        say('A silly drink.');
+      }
+      doorSig = '';
+    }));
+    const friend = people().find((person) => person.id !== me());
+    if (friend) {
+      els.doors.append(button(`Drink for ${friend.name}`, () => {
+        const next = buyDrink(save);
+        if (!next.ok) say('The purse cannot cover a drink.');
+        else {
+          save = next.save;
+          persist();
+          publish('drink', { to: friend.id, name: myName() });
+          say(`A drink for ${friend.name}.`);
+        }
+        doorSig = '';
+      }));
+    }
+    const asked = GOODS.find((item) => item.id === save.errand);
+    els.doors.append(button(asked ? `Bring ${asked.name}` : 'Errand', () => {
+      const next = turnInErrand(save);
+      if (!next.ok) say('The bag does not have that yet.');
+      else {
+        save = next.save;
+        persist();
+        say(`The tavern paid ${next.paid}.`);
+      }
+      doorSig = '';
+    }));
+  }
+  if (market) {
+    for (const part of PARTS) {
+      els.doors.append(button(`${part.name} · ${PART_PRICE}`, () => {
+        const next = buyPart(save, part.id);
+        if (!next.ok) say('The purse cannot cover that part.');
+        else {
+          save = next.save;
+          persist();
+          say(`Bought ${part.name}.`);
+        }
+        doorSig = '';
+      }));
+    }
+    for (const good of GOODS) {
+      if (!save.bag[good.id]) continue;
+      els.doors.append(button(`Sell ${good.name} · ${MARKET_PAY}`, () => {
+        const next = sellGood(save, good.id);
+        if (!next.ok) return;
+        save = next.save;
+        persist();
+        say(`Sold for ${next.paid}.`);
+        doorSig = '';
+      }));
+    }
+  }
+}
+
 let placeTick = 0;
 function frame(now) {
   const dt = lastStamp ? Math.min(0.05, (now - lastStamp) / 1000) : 0.016;
   lastStamp = now;
   if (roomOpen()) {
     stepCity(dt);
+    stepWorks(dt, now);
+    stepStreet(dt);
     if (els.left) drawLane(els.left, 'left');
     if (els.right) drawLane(els.right, 'right');
     placeBridge();
     placeEmotes();
+    placeDoors();
     placeTick += dt;
-    if (placeTick > 0.4 && save.cityOn) {
+    if (placeTick > 0.4 && atHome) {
+      placeTick = 0;
+      publishHome();
+    } else if (placeTick > 0.4 && visitHost) {
+      placeTick = 0;
+      publish('visit', {
+        host: visitHost.id,
+        x: Math.round(actor.x),
+        y: Math.round(actor.y),
+        facing: actor.facing,
+        colour: save.colour,
+        name: myName(),
+      });
+    } else if (placeTick > 0.4 && save.cityOn && !atHome && !visitHost) {
       placeTick = 0;
       publish('place', {
         x: Math.round(actor.x),
@@ -597,6 +969,7 @@ function paintPanel() {
   else if (tab === 'favourites') paintFavourites();
   else if (tab === 'board') paintBoard();
   else if (tab === 'shop') paintShop();
+  else if (tab === 'bag') paintBag();
   else paintPurse();
 }
 
@@ -638,11 +1011,12 @@ function paintGames() {
   const guns = h('div', 'colo-guns');
   for (const name of ['rifle', 'launcher', 'beam']) {
     const gun = button(name, () => {
+      streetGun = name;
       if (!match) match = { gun: name, on: false, livesLeft: 0, id: '' };
       match.gun = name;
       paintPanel();
     });
-    gun.setAttribute('aria-pressed', match && match.gun === name ? 'true' : 'false');
+    gun.setAttribute('aria-pressed', (match && match.gun === name) || streetGun === name ? 'true' : 'false');
     guns.append(gun);
   }
   if (match && match.invite && !match.on) {
@@ -743,7 +1117,20 @@ function joinMatch() {
   paintHud();
 }
 
+function fireStreet() {
+  if (!streetCat || streetGun === 'beam') return;
+  if (streetCool > performance.now()) return;
+  const spec = GUNS[streetGun];
+  streetCool = performance.now() + spec.cooldown * 1000;
+  const shot = fireGun(streetGun, { x: actor.x + actor.w / 2, y: actor.y + 28 }, actor.facing);
+  if (shot) streetShots.push(shot);
+}
+
 function fireCurrent() {
+  if (streetCat && !(match && match.on)) {
+    fireStreet();
+    return;
+  }
   if (!match || !match.on || match.gun === 'beam') return;
   const spec = GUNS[match.gun];
   if (match.cool > performance.now()) return;
@@ -757,14 +1144,17 @@ function fireCurrent() {
 }
 
 function paintHud() {
+  if (!els.hud) return;
+  const street = !!(streetCat && walking && !atHome && !visitHost && !(match && match.on));
   els.hud.replaceChildren();
-  els.hud.hidden = !(match && match.on);
+  els.hud.hidden = !(match && match.on) && !street;
   if (els.hud.hidden) return;
-  els.hud.append(h('span', 'colo-note', `${match.livesLeft} ${match.livesLeft === 1 ? 'life' : 'lives'}`));
+  if (match && match.on) els.hud.append(h('span', 'colo-note', `${match.livesLeft} ${match.livesLeft === 1 ? 'life' : 'lives'}`));
   const fire = button('Fire', () => {});
   fire.addEventListener('pointerdown', (event) => {
     event.preventDefault();
-    if (match.gun === 'beam') beamOn = true;
+    const beam = street ? streetGun === 'beam' : match && match.gun === 'beam';
+    if (beam) beamOn = true;
     else fireCurrent();
   });
   fire.addEventListener('pointerup', () => { beamOn = false; });
@@ -815,8 +1205,102 @@ function paintBoard() {
   els.panel.append(list);
 }
 
+function itemName(id) {
+  return [...PARTS, ...GOODS].find((item) => item.id === id)?.name || id;
+}
+
+function paintBag() {
+  const lines = [...PARTS, ...GOODS].map((item) => `${item.name} ${save.bag[item.id] || 0}`);
+  els.panel.append(h('p', 'colo-note', lines.join(' · ')));
+  const list = h('div', 'colo-list');
+  for (const spec of WORKS) {
+    const open = save.patches >= spec.patch;
+    const state = save.works[spec.id];
+    const note = open
+      ? (state.loaded ? `working ${Math.floor(state.progress)}s` : `needs ${itemName(spec.part)}`)
+      : 'locked patch';
+    list.append(h('p', '', `${spec.name}: ${note}`));
+  }
+  const other = nearestOther();
+  for (const item of [...PARTS, ...GOODS]) {
+    if (!save.bag[item.id] || !other) continue;
+    list.append(button(`Offer ${item.name} to ${other.name}`, () => {
+      const id = `t-${gameSeq + 1}`;
+      const next = offerTrade(save, item.id, 1, other.name, id);
+      if (!next.ok) say('The bag does not have that.');
+      else {
+        save = next.save;
+        persist();
+        publish('trade', { id, item: item.id, count: 1, name: myName(), to: other.id });
+        say(`Offered ${item.name}.`);
+      }
+      paintPanel();
+    }));
+  }
+  if (tradeOffer) {
+    list.append(button(`Accept ${itemName(tradeOffer.item)}`, () => {
+      const next = acceptTrade(save, tradeOffer.item, tradeOffer.count);
+      if (next.ok) {
+        save = next.save;
+        publish('trade-accept', { id: tradeOffer.id, to: tradeOffer.from });
+        tradeOffer = null;
+        persist();
+        say('Accepted.');
+      }
+      paintPanel();
+    }));
+    list.append(button('No thanks', () => {
+      publish('trade-decline', { id: tradeOffer.id, to: tradeOffer.from });
+      tradeOffer = null;
+      paintPanel();
+    }));
+  }
+  for (const [id, home] of homes) {
+    if (!mayEnter(home.invites, myName())) continue;
+    list.append(button(`Visit ${home.name || 'home'}`, () => enterVisit(id)));
+  }
+  els.panel.append(list);
+}
+
+function enterVisit(id) {
+  const home = homes.get(id);
+  if (!home || !mayEnter(home.invites, myName())) return;
+  if (!visitHost && !atHome) citySpot = { x: actor.x, y: actor.y };
+  atHome = false;
+  visitHost = { id, name: home.name || 'home' };
+  const station = homeWorld(home.patches || 1);
+  actor.x = 80;
+  actor.y = station.ground - actor.h;
+  actor.vx = 0;
+  actor.vy = 0;
+  paintCue();
+}
+
 function paintShop() {
   els.panel.append(h('p', 'colo-note', `Purse ${save.coins}.`));
+  const cost = nextPatchCost(save.patches);
+  if (cost) {
+    els.panel.append(button(`Open the next patch · ${cost}`, () => {
+      const next = unlockPatch(save);
+      if (!next.ok) say('The purse cannot open that patch.');
+      else {
+        save = next.save;
+        persist();
+        say('Another patch is open.');
+        if (atHome) publishHome();
+      }
+      paintPanel();
+    }));
+  }
+  for (const person of people().filter((item) => item.id !== me())) {
+    const invited = save.invites.includes(person.name);
+    els.panel.append(button(invited ? `Keep ${person.name} out` : `Invite ${person.name}`, () => {
+      save.invites = toggleInvite(save.invites, person.name);
+      persist();
+      if (atHome) publishHome();
+      paintPanel();
+    }));
+  }
   const list = h('div', 'colo-list');
   for (const item of CATALOG) {
     const owned = save.owned.includes(item.id);
@@ -938,7 +1422,7 @@ function buildPop() {
   }
   const tabs = h('div', 'colo-tabs');
   tabs.setAttribute('role', 'tablist');
-  for (const [id, label] of [['games', 'Games'], ['favourites', 'Favourites'], ['board', 'Board'], ['shop', 'Shop'], ['purse', 'Purse']]) {
+  for (const [id, label] of [['games', 'Games'], ['favourites', 'Favourites'], ['board', 'Board'], ['shop', 'Shop'], ['bag', 'Bag'], ['purse', 'Purse']]) {
     const node = button(label, () => { tab = id; paintPanel(); markTabs(); });
     node.dataset.tab = id;
     node.setAttribute('role', 'tab');
@@ -985,6 +1469,9 @@ function buildCity() {
   const cue = h('p', 'walk-cue', 'Walking');
   cue.hidden = true;
   leftLane.append(cue);
+  const homeCue = h('p', 'home-cue', 'Home');
+  homeCue.hidden = true;
+  leftLane.append(homeCue);
   const hud = h('div', 'city-hud');
   hud.hidden = true;
   rightLane.append(hud);
@@ -998,6 +1485,10 @@ function buildCity() {
     }));
   }
   document.body.append(emotes);
+  const doors = h('div', 'city-emotes');
+  doors.hidden = true;
+  doors.style.position = 'fixed';
+  document.body.append(doors);
   const bridge = h('div', 'city-bridge');
   bridge.hidden = true;
   bridge.append(document.createElement('canvas'));
@@ -1005,6 +1496,8 @@ function buildCity() {
   els.left = left;
   els.right = right;
   els.cue = cue;
+  els.homeCue = homeCue;
+  els.doors = doors;
   els.hud = hud;
   els.emotes = emotes;
   els.bridge = bridge;
@@ -1038,11 +1531,17 @@ export function settleColosseum() {
   const back = releaseEscrow(save.coins, save.escrow);
   save.coins = back.coins;
   save.escrow = back.escrow;
+  save = releaseOffers(save);
   walking = false;
+  atHome = false;
+  visitHost = null;
   held = blankHeld();
   match = null;
   shots.length = 0;
+  streetShots.length = 0;
+  streetCat = null;
   others.clear();
+  visitors.clear();
   paintCue();
   if (els.bridge) els.bridge.hidden = true;
   if (els.hud) els.hud.hidden = true;
