@@ -1,9 +1,17 @@
+/* The town game: HUD, item bar, talk box, place cards and the Colosseum popup. */
+
+.pixel-face,
+.pixel-icon {
+  image-rendering: pixelated;
+  flex: none;
+}
+
 .colo-entry {
   border: 0;
   background: transparent;
   color: var(--muted);
   border-radius: 999px;
-  padding: 6px 10px;
+  padding: 5px 9px;
   font-size: 13px;
 }
 
@@ -13,44 +21,227 @@
   color: var(--lilac);
 }
 
-.colo-pop {
+/* Retro panels share one look. */
+.game-hud,
+.item-bar,
+.emote-bar,
+.talk-box,
+.game-card,
+.game-toast {
   position: fixed;
-  z-index: 7;
-  top: 64px;
-  right: 12px;
-  width: min(400px, calc(100vw - 24px));
-  max-height: calc(100dvh - 160px);
-  overflow: auto;
-  background: var(--paper);
-  color: var(--ink);
-  border: 1px solid var(--line);
-  border-radius: 20px;
-  box-shadow: 0 18px 40px rgba(80, 50, 30, 0.16);
-  padding: 12px;
+  z-index: 15;
+  color: #fff6e6;
+  background: rgba(22, 14, 40, 0.88);
+  border: 2px solid #5b4a8a;
+  box-shadow: 0 0 0 2px #1a1030, 0 10px 30px rgba(5, 2, 20, 0.5);
+  font-family: "Trebuchet MS", "Segoe UI", sans-serif;
 }
 
-.colo-pop h2 {
+.game-hud {
+  left: 12px;
+  top: 12px;
+  border-radius: 12px;
+  padding: 6px 10px;
+  max-width: min(560px, calc(100vw - 24px));
+}
+
+.hud-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+}
+
+.hud-place { color: #9bf6ff; font-weight: 700; letter-spacing: 0.04em; }
+.hud-coins { color: #ffd166; }
+.hud-hearts { color: #ff5a7a; letter-spacing: 1px; }
+
+.hud-row button,
+.emote-bar button,
+.talk-choices button,
+.card-buttons button {
+  border: 1px solid #7a68b0;
+  background: #2e2250;
+  color: #fff6e6;
+  border-radius: 8px;
+  padding: 4px 10px;
+  font-size: 13px;
+}
+
+.hud-row button:hover,
+.emote-bar button:hover,
+.talk-choices button:hover,
+.card-buttons button:hover { background: #3f3070; }
+
+.card-buttons button:disabled { opacity: 0.45; cursor: default; }
+
+.hud-mode {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: #c9bde8;
+}
+
+body[data-mode="chat"] .hud-mode { color: #ffd166; }
+
+.item-bar {
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 6px;
+  padding: 6px;
+  border-radius: 12px;
+}
+
+.bar-slot {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  padding: 0;
+  border: 2px solid #4a3a78;
+  border-radius: 8px;
+  background: #1c1434;
+}
+
+.bar-slot[aria-pressed="true"] {
+  border-color: #ffd166;
+  box-shadow: 0 0 0 2px rgba(255, 209, 102, 0.35);
+}
+
+.bar-key {
+  position: absolute;
+  left: 3px;
+  top: 1px;
+  font-size: 10px;
+  color: #c9bde8;
+}
+
+.bar-count {
+  position: absolute;
+  right: 3px;
+  bottom: 1px;
+  font-size: 10px;
+  color: #fff6e6;
+}
+
+.emote-bar {
+  left: 50%;
+  bottom: 74px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: 12px;
+}
+
+.emote-name { font-size: 13px; color: #9bf6ff; margin-right: 4px; }
+
+.game-toast {
+  left: 50%;
+  top: 12px;
+  transform: translateX(-50%);
   margin: 0;
-  font-family: Palatino, "Iowan Old Style", Georgia, serif;
-  font-size: 22px;
-  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 10px;
+  font-size: 13px;
+  pointer-events: none;
+  max-width: min(520px, calc(100vw - 24px));
+  text-align: center;
 }
 
-.colo-head, .colo-tabs, .colo-row, .colo-colours, .colo-guns {
+.toast-fade { animation: toast-out 4s ease forwards; }
+
+@keyframes toast-out {
+  0%, 75% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+.talk-box {
+  left: 50%;
+  bottom: 74px;
+  transform: translateX(-50%);
+  width: min(620px, calc(100vw - 24px));
+  display: flex;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  cursor: pointer;
+  z-index: 70;
+}
+
+.talk-face canvas {
+  width: 60px;
+  height: 72px;
+  background: #2e2250;
+  border-radius: 8px;
+}
+
+.talk-main { flex: 1; min-width: 0; }
+
+.talk-head { display: flex; align-items: baseline; gap: 8px; }
+.talk-name { color: #ffe9a8; font-size: 15px; }
+.talk-meta { color: #c9bde8; font-size: 12px; text-transform: lowercase; }
+
+.talk-text {
+  min-height: 2.8em;
+  margin: 4px 0 8px;
+  font-size: 15px;
+  line-height: 1.4;
+}
+
+.talk-box[data-voice="wacky"] .talk-text { color: #ffd6f6; font-weight: 600; }
+.talk-box[data-voice="flat"] .talk-text { color: #d8dde8; font-family: "Courier New", monospace; }
+.talk-box[data-voice="sarcastic"] .talk-text { color: #fff6e6; font-style: italic; }
+
+.talk-choices,
+.card-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.game-card {
+  left: 12px;
+  bottom: 74px;
+  width: min(360px, calc(100vw - 24px));
+  max-height: min(60vh, 460px);
+  overflow: auto;
+  padding: 10px 12px;
+  border-radius: 14px;
+  z-index: 70;
+}
+
+.card-title { margin: 0 0 6px; color: #9bf6ff; font-size: 15px; }
+.card-body p { margin: 0 0 6px; font-size: 14px; line-height: 1.35; }
+.card-close { margin-left: auto; }
+
+.checklist {
+  list-style: none;
+  margin: 4px 0 8px;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.checklist .done { color: #7dff6a; }
+.checklist .todo { color: inherit; opacity: 0.85; }
+
+/* The Colosseum popup. */
+.colo-body { display: grid; align-content: start; gap: 8px; }
+
+.colo-tabs, .colo-row, .colo-colours, .colo-looks {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
   align-items: center;
 }
 
-.colo-head { justify-content: space-between; margin-bottom: 8px; }
-
-.colo-tabs { margin: 8px 0; }
-
-.colo-tabs button,
-.colo-pop button,
-.colo-hud button,
-.city-emotes button {
+.colo-pop button {
   border: 0;
   background: var(--chip);
   color: var(--lilac);
@@ -59,36 +250,106 @@
   font-size: 13px;
 }
 
+.colo-pop button:disabled { opacity: 0.45; }
+
 .colo-tabs button[aria-selected="true"],
-.colo-colours button[aria-pressed="true"],
-.colo-guns button[aria-pressed="true"] {
+.colo-pop button[aria-pressed="true"] {
   background: var(--lilac);
   color: var(--on-accent);
 }
 
-.colo-note, .colo-status {
-  margin: 6px 0;
-  color: var(--muted);
+.colo-colours button {
+  width: 34px;
+  height: 26px;
+  color: transparent;
+  overflow: hidden;
+  border: 2px solid transparent;
+}
+
+.colo-colours button[aria-pressed="true"] { border-color: var(--ink); }
+
+.look-pick {
+  display: grid !important;
+  justify-items: center;
+  gap: 2px;
+  border-radius: 12px !important;
+  padding: 6px 8px !important;
+}
+
+.look-pick canvas { width: 40px; height: 48px; }
+
+.colo-note, .colo-status { margin: 0; font-size: 13px; color: var(--muted); }
+.colo-status { min-height: 1.2em; color: var(--lilac); }
+.colo-sub { margin: 8px 0 2px; font-size: 14px; color: var(--lilac); }
+.colo-owned { font-size: 12px; color: var(--muted); }
+
+.colo-list { display: grid; gap: 6px; margin: 4px 0; }
+.colo-list p { margin: 0; font-size: 13px; }
+.bag-name { min-width: 0; flex: 1; font-size: 13px; }
+.slot-pick { padding: 2px 8px !important; }
+
+.bag-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 6px;
+}
+
+.bag-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  background: var(--chip);
+  border-radius: 10px;
   font-size: 13px;
 }
 
+.skill-tree {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+}
+
+.skill-branch { display: grid; align-content: start; gap: 6px; }
+.skill-branch h3 { margin: 0; font-size: 13px; color: var(--lilac); letter-spacing: 0.06em; text-transform: uppercase; }
+
+.skill-node {
+  display: grid;
+  gap: 2px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--chip);
+  font-size: 12px;
+}
+
+.skill-node.child { margin-left: 10px; border-left: 3px solid var(--lilac); }
+.skill-node.owned { border-color: var(--lilac); }
+.skill-node.locked { opacity: 0.6; }
+.skill-node strong { font-size: 13px; }
+
+.friend-row { display: flex; align-items: center; gap: 8px; }
+.friend-row canvas { width: 30px; height: 36px; }
+.friend-text { display: grid; gap: 2px; flex: 1; font-size: 12px; }
+.friend-text strong { font-size: 13px; }
+.friend-meter { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
+.friend-meter span { display: block; height: 100%; background: var(--lilac); }
+
+.colo-board { margin: 0; padding-left: 20px; display: grid; gap: 4px; font-size: 14px; }
+
 .colo-frame {
   position: relative;
-  height: 196px;
-  margin: 8px 0;
-  border-radius: 16px;
+  height: 180px;
+  border-radius: 14px;
   background: #1b2438;
   overflow: hidden;
 }
 
 .colo-corner {
   position: absolute;
-  top: 8px;
-  width: 36px;
+  top: 6px;
+  width: 30px;
   height: 36px;
-  border-radius: 8px;
-  object-fit: cover;
-  background: #31405f;
 }
 
 .colo-corner.left { left: 8px; }
@@ -96,10 +357,11 @@
 
 .colo-wall {
   position: absolute;
-  top: 52px;
+  top: 48px;
   bottom: 12px;
   width: 14px;
   border-radius: 6px;
+  cursor: pointer;
 }
 
 .colo-wall.left { left: 10px; }
@@ -109,21 +371,13 @@
   position: absolute;
   left: 32px;
   right: 32px;
-  top: 48px;
+  top: 44px;
   bottom: 12px;
 }
 
-.colo-stage canvas, .colo-type {
-  width: 100%;
-  height: 100%;
-}
+.colo-stage canvas, .colo-type { width: 100%; height: 100%; }
 
-.colo-type {
-  display: grid;
-  align-content: center;
-  gap: 8px;
-  color: #f4f0e6;
-}
+.colo-type { display: grid; align-content: center; gap: 8px; color: #f4f0e6; }
 
 .colo-type input, .colo-pop input {
   border: 1px solid var(--line);
@@ -133,77 +387,37 @@
   padding: 6px 10px;
 }
 
-.colo-list { display: grid; gap: 6px; margin: 8px 0; }
-
-.colo-list p { margin: 0; }
-
-.city-layer {
+.spark {
   position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  z-index: 0;
-  pointer-events: none;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  margin: -7px 0 0 -7px;
+  border-radius: 50%;
+  background: #ffd166;
+  box-shadow: 0 0 12px #ffd166;
+  transition: left 0.12s;
 }
 
-.city-bridge {
-  position: fixed;
-  z-index: 4;
-  width: 88px;
-  height: 120px;
-  pointer-events: none;
-}
-
-.home-cue {
-  position: absolute;
-  z-index: 4;
-  left: 10px;
-  bottom: 36px;
-  pointer-events: none;
-  font-size: 12px;
-  color: var(--muted);
-  background: var(--paper);
-  border-radius: 999px;
-  padding: 3px 8px;
-  opacity: 0.88;
-}
-
-.walk-cue {
-  position: absolute;
-  z-index: 4;
-  left: 10px;
-  bottom: 10px;
-  pointer-events: none;
-  font-size: 12px;
-  color: var(--muted);
-  background: var(--paper);
-  border-radius: 999px;
-  padding: 3px 8px;
-  opacity: 0.88;
-}
-
-.city-hud, .city-emotes {
-  position: absolute;
-  z-index: 4;
-  left: 8px;
-  right: 8px;
+/* Disco cats and the affirmation cat in their square windows. */
+.disco-pop .disco-stage,
+.affirm-card .affirm-body {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
   gap: 6px;
 }
 
-.city-hud { bottom: 36px; }
-.city-emotes {
-  position: fixed;
-  width: max-content;
-  z-index: 5;
+.disco-pop .disco-ball { position: relative; left: auto; top: auto; margin: 0 auto; width: 72px; }
+.disco-pop .troupe-cats { width: 100%; }
+.disco-pop .troupe-cats .cat-figure { width: 22%; }
+.affirm-card .cat-hit { width: min(150px, 70%); }
+
+@media (max-width: 560px) {
+  .game-hud { font-size: 12px; }
+  .hud-mode { display: none; }
+  .game-card { left: 12px; right: 12px; width: auto; }
 }
 
-.spark {
-  position: absolute;
-  width: 12px;
-  height: 12px;
-  margin-left: -6px;
-  border-radius: 50%;
-  background: #f0c14a;
-}
+.game-hud, .item-bar, .emote-bar, .talk-box, .game-card, .pop-bar, .tray { user-select: none; }

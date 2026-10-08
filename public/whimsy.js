@@ -2,6 +2,7 @@
 // The paperclip picture is Prakriti's own file, shown as-is.
 
 import { pickAffirmation } from './affirmations.js';
+import { popBar, popup, resetPops } from './popup.js';
 
 const DISCO_LINE = "You're doing so great and I am so proud of you.";
 
@@ -166,129 +167,6 @@ function discoBallSvg() {
   return `<svg class="ball-svg" viewBox="-2 -4 18 20" shape-rendering="crispEdges" aria-hidden="true"><rect x="6.6" y="-4" width="0.8" height="4" fill="#5c4578"/>${facets.join('')}</svg>`;
 }
 
-function currentOffset(card) {
-  const parent = card.parentElement.getBoundingClientRect();
-  const rect = card.getBoundingClientRect();
-  return { left: rect.left - parent.left, top: rect.top - parent.top };
-}
-
-function moveCard(card, left, top) {
-  const parent = card.parentElement;
-  if (!parent || !Number.isFinite(left) || !Number.isFinite(top)) return;
-  const bounds = parent.getBoundingClientRect();
-  const rect = card.getBoundingClientRect();
-  const maxLeft = Math.max(0, bounds.width - rect.width);
-  const maxTop = Math.max(0, bounds.height - rect.height);
-  card.style.left = `${Math.min(maxLeft, Math.max(0, left))}px`;
-  card.style.top = `${Math.min(maxTop, Math.max(0, top))}px`;
-}
-
-function enableDrag(card) {
-  const bar = card.querySelector('.float-bar');
-  if (!bar) return;
-  let drag = null;
-  const onMove = (event) => {
-    if (!drag || event.pointerId !== drag.id) return;
-    moveCard(card, drag.left + (event.clientX - drag.x), drag.top + (event.clientY - drag.y));
-  };
-  const end = (event) => {
-    if (!drag || (event && event.pointerId !== drag.id)) return;
-    drag = null;
-    window.removeEventListener('pointermove', onMove);
-    window.removeEventListener('pointerup', end);
-    window.removeEventListener('pointercancel', end);
-  };
-  bar.addEventListener('pointerdown', (event) => {
-    if (event.button !== 0) return;
-    if (event.target.closest('[data-no-drag]')) return;
-    event.preventDefault();
-    const pos = currentOffset(card);
-    drag = { id: event.pointerId, x: event.clientX, y: event.clientY, left: pos.left, top: pos.top };
-    card.dataset.home = '0';
-    card.parentElement?.classList.remove('affirm-home');
-    window.addEventListener('pointermove', onMove);
-    window.addEventListener('pointerup', end);
-    window.addEventListener('pointercancel', end);
-  });
-  bar.addEventListener('keydown', (event) => {
-    const step = event.shiftKey ? 28 : 12;
-    const keys = {
-      ArrowLeft: [-step, 0],
-      ArrowRight: [step, 0],
-      ArrowUp: [0, -step],
-      ArrowDown: [0, step],
-    };
-    const delta = keys[event.key];
-    if (!delta) return;
-    event.preventDefault();
-    const pos = currentOffset(card);
-    card.dataset.home = '0';
-    card.parentElement?.classList.remove('affirm-home');
-    moveCard(card, pos.left + delta[0], pos.top + delta[1]);
-  });
-  card.addEventListener('whimsy-discard', end);
-}
-
-function placeInLane(card, lane, top) {
-  const roomy = Math.max(140, lane.clientWidth - 24);
-  const max = card.classList.contains('troupe') ? 460 : 250;
-  card.style.width = `${Math.min(roomy, max)}px`;
-  const used = card.offsetWidth || Math.min(roomy, max);
-  const left = lane.classList.contains('lane-right')
-    ? Math.max(8, lane.clientWidth - used - 8)
-    : 8;
-  card.style.left = `${left}px`;
-  card.style.top = `${top}px`;
-  card.dataset.home = '1';
-}
-
-function floatBar(title) {
-  const bar = document.createElement('div');
-  bar.className = 'float-bar';
-  bar.tabIndex = 0;
-  const grip = document.createElement('span');
-  grip.className = 'grip';
-  grip.setAttribute('aria-hidden', 'true');
-  const label = document.createElement('span');
-  label.className = 'float-title';
-  label.textContent = title;
-  const min = document.createElement('button');
-  min.type = 'button';
-  min.className = 'float-done';
-  min.dataset.noDrag = '1';
-  min.dataset.role = 'min';
-  min.textContent = 'Min';
-  min.setAttribute('aria-label', `Minimise ${title}`);
-  const done = document.createElement('button');
-  done.type = 'button';
-  done.className = 'float-done';
-  done.dataset.noDrag = '1';
-  done.dataset.role = 'done';
-  done.textContent = 'Done';
-  done.setAttribute('aria-label', `Dismiss ${title}`);
-  bar.append(grip, label, min, done);
-  return bar;
-}
-
-function bindShelf(card, lane, label) {
-  const tab = document.createElement('button');
-  tab.type = 'button';
-  tab.className = 'side-tab';
-  tab.textContent = label;
-  tab.hidden = true;
-  tab.setAttribute('aria-label', `Open ${label}`);
-  lane.append(tab);
-  card._tab = tab;
-  card.querySelector('[data-role="min"]').addEventListener('click', () => {
-    card.hidden = true;
-    tab.hidden = false;
-  });
-  tab.addEventListener('click', () => {
-    tab.hidden = true;
-    card.hidden = false;
-  });
-}
-
 const SEQUIN_DIAM = 64;
 const PIXEL = 8;
 const LOOK_KEY = 'nook-look';
@@ -440,58 +318,68 @@ function hexA(hex, alpha) {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
-function beamAngle(i, t, count) {
-  const base = -1.05 + (i / (count - 1)) * 2.35;
-  const sway = Math.sin(t / 520 + i * 0.85) * 0.11;
-  const bob = Math.sin(t / 250 + i * 1.3) * 0.035;
-  return base + sway + bob;
+// One fan of cones from the ball. The drawing and the sequins share this geometry,
+// so a cone colours exactly the sequins it crosses and nothing else.
+const CONES = 7;
+const FAN = 1.8;
+const STEP = FAN / (CONES - 1);
+const HALF = STEP * 0.34;
+
+function coneAngles(t) {
+  const sway = Math.sin(t / 1600) * 0.28;
+  const out = [];
+  for (let i = 0; i < CONES; i += 1) out.push(sway + (i - (CONES - 1) / 2) * STEP);
+  return out;
 }
 
-function ballDesk() {
-  const ball = document.querySelector('.disco-ball');
-  const desk = document.querySelector('.desk');
-  if (!ball || !desk || !look.disco) return null;
-  const deskRect = desk.getBoundingClientRect();
-  const ballRect = ball.getBoundingClientRect();
-  return {
-    x: ballRect.left + ballRect.width / 2 - deskRect.left,
-    y: ballRect.top + ballRect.height * 0.62 - deskRect.top,
-  };
+function coneColour(i, t, palette) {
+  const turn = Math.floor(t / 900);
+  return palette[(i + turn) % palette.length];
+}
+
+// The ball's light point in window coordinates, or null when it is not on screen.
+function ballPoint() {
+  if (!look.disco) return null;
+  const ball = document.querySelector('.disco-pop .disco-ball');
+  if (!ball || !ball.offsetParent) return null;
+  const rect = ball.getBoundingClientRect();
+  if (!rect.width) return null;
+  return { x: rect.left + rect.width / 2, y: rect.top + rect.height * 0.62 };
+}
+
+function angleGap(a, b) {
+  let d = (a - b) % (Math.PI * 2);
+  if (d > Math.PI) d -= Math.PI * 2;
+  if (d < -Math.PI) d += Math.PI * 2;
+  return Math.abs(d);
+}
+
+// How much of a sequin (centre x, y, radius r) a cone covers, as 0..1.
+function lightAt(origin, x, y, r, t, palette) {
+  if (!origin || !palette) return null;
+  const dx = x - origin.x;
+  const dy = y - origin.y;
+  const dist = Math.hypot(dx, dy);
+  if (dist < r || dy <= 0) return null;
+  const toward = Math.atan2(dx, dy);
+  const spread = Math.asin(Math.min(1, r / dist));
+  const angles = coneAngles(t);
+  let best = 0;
+  let index = -1;
+  for (let i = 0; i < angles.length; i += 1) {
+    const gap = angleGap(toward, angles[i]);
+    const cover = Math.max(0, Math.min(1, (HALF + spread - gap) / (2 * spread)));
+    if (cover > best) {
+      best = cover;
+      index = i;
+    }
+  }
+  if (best <= 0) return null;
+  const step = Math.max(1, Math.round(best * 8)) / 8;
+  return { gain: step, colour: coneColour(index, t, palette) };
 }
 
 const toneCache = new Map();
-
-function lightAt(origin, deskX, deskY, t, palette) {
-  if (!origin || !palette) return null;
-  const count = 7;
-  let best = 0;
-  let hue = 0;
-  for (let i = 0; i < count; i += 1) {
-    const ang = beamAngle(i, t, count);
-    const dx = Math.sin(ang);
-    const dy = Math.cos(ang);
-    const vx = deskX - origin.x;
-    const vy = deskY - origin.y;
-    const along = vx * dx + vy * dy;
-    if (along < 0) continue;
-    const perp = Math.abs(vx * dy - vy * dx);
-    const width = 22 + along * 0.11;
-    if (perp > width) continue;
-    const gain = 1 - perp / width;
-    if (gain > best) {
-      best = gain;
-      hue = ((along / 260) - t / 900 + i * 0.17) % 1;
-      if (hue < 0) hue += 1;
-    }
-  }
-  if (best <= 0.08) return null;
-  const step = Math.round(best * 8) / 8;
-  if (step <= 0) return null;
-  return {
-    gain: step,
-    colour: palette[Math.min(palette.length - 1, Math.floor(hue * palette.length))],
-  };
-}
 
 function toneFor(way, sleek, index, back, gleam) {
   const stops = wayStops(way, sleek);
@@ -538,70 +426,65 @@ const RUNES = [
   ['##.#', '#.#.', '##.#', '#.#.', '##.#'],
 ];
 
-function mountDiscoLight(desk) {
+function mountDiscoLight() {
   const canvas = document.createElement('canvas');
   canvas.className = 'disco-light';
   canvas.setAttribute('aria-hidden', 'true');
-  desk.append(canvas);
+  document.body.append(canvas);
   const ctx = canvas.getContext('2d');
   const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   let raf = 0;
   let alive = true;
+  let w = 0;
+  let h = 0;
 
   function layout() {
-    const rect = desk.getBoundingClientRect();
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    canvas.width = Math.max(1, Math.round(rect.width * dpr));
-    canvas.height = Math.max(1, Math.round(rect.height * dpr));
+    w = window.innerWidth;
+    h = window.innerHeight;
+    canvas.width = Math.max(1, Math.round(w * dpr));
+    canvas.height = Math.max(1, Math.round(h * dpr));
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
 
   function frame(now) {
     if (!alive) return;
-    const rect = desk.getBoundingClientRect();
-    ctx.clearRect(0, 0, rect.width, rect.height);
-    const origin = ballDesk();
+    ctx.clearRect(0, 0, w, h);
+    const origin = ballPoint();
     const kind = streamKind();
     if (origin && kind) {
       const t = now * (reduce ? 0.35 : 1);
       const palette = streamPalette(kind);
-      const count = 7;
-      const length = rect.height + 120;
-      for (let i = 0; i < count; i += 1) {
-        ctx.save();
-        ctx.translate(origin.x, origin.y);
-        ctx.rotate(beamAngle(i, t, count));
-        const grad = ctx.createLinearGradient(0, 0, 0, length);
-        const shift = (t / 900 + i * 0.08) % 1;
-        for (let s = 0; s <= 8; s += 1) {
-          let u = (s / 8 + shift) % 1;
-          if (u < 0) u += 1;
-          const colour = palette[Math.floor(u * palette.length) % palette.length];
-          const breathe = 0.5 + 0.5 * Math.sin(t / 280 + i * 0.7 + s);
-          grad.addColorStop(s / 8, hexA(colour.fill, 0.1 + breathe * 0.22));
-        }
+      const reach = Math.hypot(w, h);
+      coneAngles(t).forEach((angle, i) => {
+        const colour = coneColour(i, t, palette);
+        const a0 = angle - HALF;
+        const a1 = angle + HALF;
+        const grad = ctx.createRadialGradient(origin.x, origin.y, 4, origin.x, origin.y, reach * 0.8);
+        grad.addColorStop(0, hexA(colour.fill, 0.34));
+        grad.addColorStop(1, hexA(colour.fill, 0.06));
         ctx.fillStyle = grad;
-        const spread = 36 + i * 8;
         ctx.beginPath();
-        ctx.moveTo(-6, 0);
-        ctx.lineTo(-spread, length);
-        ctx.lineTo(spread, length);
+        ctx.moveTo(origin.x, origin.y);
+        ctx.lineTo(origin.x + Math.sin(a0) * reach, origin.y + Math.cos(a0) * reach);
+        ctx.lineTo(origin.x + Math.sin(a1) * reach, origin.y + Math.cos(a1) * reach);
         ctx.closePath();
         ctx.fill();
-        ctx.restore();
-      }
+        ctx.strokeStyle = hexA(colour.rim || colour.fill, 0.28);
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      });
     }
     raf = requestAnimationFrame(frame);
   }
 
   layout();
-  const watcher = new ResizeObserver(() => { if (alive) layout(); });
-  watcher.observe(desk);
+  window.addEventListener('resize', layout);
   raf = requestAnimationFrame(frame);
   return () => {
     alive = false;
     cancelAnimationFrame(raf);
-    watcher.disconnect();
+    window.removeEventListener('resize', layout);
     canvas.remove();
   };
 }
@@ -725,10 +608,9 @@ function mountSequinCloth(room) {
     const way = paintedWay();
     const discoOn = look.disco;
     const roomRect = discoOn ? room.getBoundingClientRect() : null;
-    const deskRect = discoOn ? room.closest('.desk')?.getBoundingClientRect() : null;
     const kind = discoOn ? streamKind() : '';
     const palette = kind ? streamPalette(kind) : null;
-    const origin = palette ? ballDesk() : null;
+    const origin = palette ? ballPoint() : null;
     const t = now * (reduce ? 0.35 : 1);
     ctx.clearRect(0, 0, width, height);
     ctx.imageSmoothingEnabled = sleek;
@@ -739,14 +621,8 @@ function mountSequinCloth(room) {
       const scale = Math.max(0.045, Math.abs(cos));
       const back = cos < 0;
       let gleam = null;
-      if (origin && deskRect && roomRect) {
-        gleam = lightAt(
-          origin,
-          sequin.x + roomRect.left - deskRect.left,
-          sequin.y + roomRect.top - deskRect.top,
-          t,
-          palette,
-        );
+      if (origin && roomRect) {
+        gleam = lightAt(origin, sequin.x + roomRect.left, sequin.y + yShiftOf(sequin) + roomRect.top, sequin.r * 0.8, t, palette);
       }
       const tones = toneFor(way, sleek, sequin.index, back, gleam);
       const yShift = sequin.lean * (1 - scale) * sequin.r * 0.28;
@@ -796,6 +672,12 @@ function mountSequinCloth(room) {
     }
     shownKey = visualKey();
     dirty = false;
+  }
+
+  function yShiftOf(sequin) {
+    const shown = sequin.spin === 0 ? 0 : easeFlip(sequin.spin);
+    const scale = Math.max(0.045, Math.abs(Math.cos((sequin.face + shown) * Math.PI)));
+    return sequin.lean * (1 - scale) * sequin.r * 0.28;
   }
 
   function poke(now, x, y, lean) {
@@ -935,9 +817,6 @@ syncControls();
 
 export function mountWhimsy() {
   const room = document.querySelector('#room');
-  const leftLane = document.querySelector('#lane-left');
-  const rightLane = document.querySelector('#lane-right');
-  const desk = document.querySelector('.desk');
   const discoBtn = document.querySelector('#disco-btn');
   const sequinBtn = document.querySelector('#sequin-btn');
   const affirmBtn = document.querySelector('#affirm-btn');
@@ -945,19 +824,14 @@ export function mountWhimsy() {
   const settingsPanel = document.querySelector('#settings-panel');
   const attachBtn = document.querySelector('#attach-btn');
   const paperclip = document.querySelector('#paperclip');
-  if (!room || !leftLane || !rightLane || !discoBtn || !affirmBtn) return;
+  if (!room || !discoBtn || !affirmBtn) return;
 
   let stopCloth = () => {};
   let clothOn = false;
   let stopLight = () => {};
   let lightOn = false;
-
-  function discard(card) {
-    if (!card) return;
-    card._tab?.remove();
-    card.dispatchEvent(new Event('whimsy-discard'));
-    card.remove();
-  }
+  let discoPop = null;
+  let affirmPop = null;
 
   function markCat(el, coat, extra) {
     el.dataset.coat = coat;
@@ -966,28 +840,23 @@ export function mountWhimsy() {
   }
 
   function hideDiscoCard() {
-    discard(leftLane.querySelector('.troupe'));
+    if (discoPop) discoPop.discard();
+    discoPop = null;
     room.classList.remove('disco-on');
   }
 
   function showDiscoCard() {
     room.classList.add('disco-on');
-    if (leftLane.querySelector('.troupe')) {
+    if (discoPop) {
       repaintSideCats();
       return;
     }
     const card = document.createElement('section');
-    card.className = 'float troupe';
+    card.className = 'disco-pop';
     card.setAttribute('aria-label', 'Disco cats');
-    const bar = floatBar('Disco cats');
-    bar.querySelector('[data-role="done"]').addEventListener('click', () => {
-      look.disco = false;
-      saveLook();
-      syncControls();
-      applyRoom();
-    });
+    const bar = popBar('Disco cats');
     const stage = document.createElement('div');
-    stage.className = 'disco-stage';
+    stage.className = 'disco-stage pop-body';
     const ball = document.createElement('div');
     ball.className = 'disco-ball';
     ball.innerHTML = discoBallSvg();
@@ -1012,10 +881,20 @@ export function mountWhimsy() {
     }
     stage.append(ball, say, cats);
     card.append(bar, stage);
-    leftLane.append(card);
-    bindShelf(card, leftLane, 'Disco');
-    enableDrag(card);
-    placeInLane(card, leftLane, 16);
+    document.body.append(card);
+    discoPop = popup(card, {
+      id: 'disco',
+      label: 'Disco',
+      size: 300,
+      min: 200,
+      place: 'bottom-left',
+      onClose: () => {
+        look.disco = false;
+        saveLook();
+        applyRoom();
+      },
+    });
+    discoPop.front();
   }
 
   function applyRoom() {
@@ -1028,9 +907,9 @@ export function mountWhimsy() {
     }
     if (look.disco) showDiscoCard();
     else hideDiscoCard();
-    if (look.disco && desk) {
+    if (look.disco) {
       if (!lightOn) {
-        stopLight = mountDiscoLight(desk);
+        stopLight = mountDiscoLight();
         lightOn = true;
       }
     } else if (lightOn) {
@@ -1050,9 +929,18 @@ export function mountWhimsy() {
     }
   }
 
+  const settingsPop = settingsPanel ? popup(settingsPanel, {
+    id: 'settings',
+    label: 'Settings',
+    size: 340,
+    min: 240,
+    place: 'top-center',
+    onClose: () => settingsBtn?.setAttribute('aria-expanded', 'false'),
+  }) : null;
+
   function setSettings(open) {
-    if (!settingsPanel || !settingsBtn) return;
-    settingsPanel.hidden = !open;
+    if (!settingsPop || !settingsBtn) return;
+    settingsPop.toggle(open);
     settingsBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
   }
 
@@ -1060,14 +948,10 @@ export function mountWhimsy() {
     event.stopPropagation();
     setSettings(!!settingsPanel?.hidden);
   });
-  document.addEventListener('click', (event) => {
-    if (!settingsPanel || settingsPanel.hidden) return;
-    if (event.target.closest('#settings-panel, #settings-btn')) return;
-    setSettings(false);
-  });
   document.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape') setSettings(false);
+    if (event.key === 'Escape' && settingsPanel && !settingsPanel.hidden && settingsPanel.contains(document.activeElement)) setSettings(false);
   });
+  document.querySelector('#reset-windows')?.addEventListener('click', () => resetPops());
 
   for (const btn of document.querySelectorAll('#theme-choices button')) {
     btn.addEventListener('click', () => {
@@ -1112,8 +996,10 @@ export function mountWhimsy() {
 
   function summonAffirmation() {
     const card = document.createElement('section');
-    card.className = 'float affirm-card';
+    card.className = 'affirm-card';
     card.setAttribute('aria-label', 'Affirmation cat');
+    const body = document.createElement('div');
+    body.className = 'pop-body affirm-body';
     const say = document.createElement('p');
     say.className = 'say-line';
     say.textContent = pickAffirmation('');
@@ -1125,28 +1011,36 @@ export function mountWhimsy() {
     hit.addEventListener('click', () => {
       say.textContent = pickAffirmation(say.textContent);
     });
-    const bar = floatBar('Affirmation cat');
-    bar.querySelector('[data-role="done"]').addEventListener('click', () => discard(card));
-    card.append(bar, say, hit);
-    rightLane.append(card);
-    bindShelf(card, rightLane, 'Affirmation cat');
-    enableDrag(card);
-    placeInLane(card, rightLane, 16);
+    body.append(say, hit);
+    card.append(popBar('Affirmation cat'), body);
+    document.body.append(card);
+    affirmPop = popup(card, {
+      id: 'affirm',
+      label: 'Affirmation cat',
+      size: 250,
+      min: 200,
+      place: 'bottom-center',
+      onClose: () => {
+        affirmPop?.discard();
+        affirmPop = null;
+      },
+    });
+    affirmPop.front();
   }
 
   affirmBtn.addEventListener('click', () => {
-    const card = rightLane.querySelector('.affirm-card');
-    if (!card) {
-      summonAffirmation();
-      return;
-    }
-    if (card.hidden) {
-      card.hidden = false;
-      if (card._tab) card._tab.hidden = true;
-    }
+    if (!affirmPop) summonAffirmation();
+    else affirmPop.show();
   });
 
-  const observer = new MutationObserver(() => applyRoom());
+  const observer = new MutationObserver(() => {
+    applyRoom();
+    if (room.hidden) {
+      affirmPop?.discard();
+      affirmPop = null;
+      settingsPop?.hide();
+    }
+  });
   observer.observe(room, { attributes: true, attributeFilter: ['hidden'] });
   applyRoom();
 

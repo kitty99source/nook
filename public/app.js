@@ -17,6 +17,7 @@ import {
 import { EMOJI_GROUPS } from './affirmations.js';
 import { CAT_PRESETS, catPortrait, mountWhimsy } from './whimsy.js';
 import { mountColosseum, settleColosseum } from './colosseum.js';
+import { popup } from './popup.js';
 
 const POLL_MS = 2000;
 const MAX_FILE = 8 * 1024 * 1024;
@@ -2444,6 +2445,14 @@ async function takeHandoff() {
 }
 
 document.querySelector('#update-now').addEventListener('click', () => { keepAndReload(); });
+
+room._pop = popup(room, {
+  id: 'chat',
+  label: 'Chat',
+  size: Math.min(520, window.innerHeight - 96),
+  min: 260,
+  place: (size, view) => ({ x: view.w - size - 24, y: Math.max(16, (view.h - size) / 2) }),
+});
 
 buildEmojiBoard();
 buildCatChoices();

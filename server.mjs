@@ -20,7 +20,7 @@ const PRESENCE_MS = 15000;
 const JSON_LIMIT = 256 * 1024;
 const PAGE_CSP = "default-src 'self'; img-src 'self' blob: https:; media-src https:; style-src 'self'; script-src 'self'; connect-src 'self' https://gifjif.com; frame-src https://www.youtube.com https://www.youtube-nocookie.com https://player.vimeo.com https://www.tiktok.com https://www.instagram.com; base-uri 'none'; frame-ancestors 'none'";
 const CAT_IDS = new Set(['cream', 'lilac', 'ginger', 'sage', 'bow', 'stripe', 'wave', 'disco']);
-const BUILD_FILES = ['index.html', 'app.css', 'app.js', 'e2e.js', 'whimsy.js', 'emoji.js', 'affirmations.js', 'colosseum.js', 'colosseum.css', 'colosseum-art.js', 'colosseum-logic.mjs'];
+const BUILD_FILES = ['index.html', 'app.css', 'app.js', 'e2e.js', 'whimsy.js', 'emoji.js', 'affirmations.js', 'colosseum.js', 'colosseum.css', 'colosseum-art.js', 'colosseum-logic.mjs', 'colosseum-world.mjs', 'colosseum-story.mjs', 'popup.js'];
 let buildCache = { key: '', token: '' };
 
 if (!Number.isInteger(port) || port < 1 || port > 65535) {
@@ -37,7 +37,7 @@ const seenWrapParcels = new Set();
 const games = [];
 const seenGameParcels = new Set();
 let nextGameId = 1;
-const GAME_POLL_MS = 400;
+const GAME_POLL_MS = 250;
 let nextId = 1;
 let nextWrapId = 1;
 let nextOrder = 1;
@@ -390,6 +390,9 @@ const publicFiles = new Map([
   ['/colosseum.css', 'colosseum.css'],
   ['/colosseum-art.js', 'colosseum-art.js'],
   ['/colosseum-logic.mjs', 'colosseum-logic.mjs'],
+  ['/colosseum-world.mjs', 'colosseum-world.mjs'],
+  ['/colosseum-story.mjs', 'colosseum-story.mjs'],
+  ['/popup.js', 'popup.js'],
   ['/paperclip.png', 'paperclip.png'],
   ['/favicon.svg', 'favicon.svg'],
 ]);
