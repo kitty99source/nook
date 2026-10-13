@@ -30,6 +30,7 @@ import {
   WORK_SECONDS,
   acceptTrade,
   aimAngle,
+  aloneInMatch,
   applyCatLoot,
   applyHit,
   applyPurse,
@@ -103,6 +104,7 @@ import {
   typingWin,
   unlockPatch,
   useClue,
+  waitingDuel,
   walkingIntent,
   weaponCooldown,
   withinReach,
@@ -551,6 +553,12 @@ function applyParcel(payload, row) {
   } else if (kind === 'match-open' && !mine) {
     if (!(match && match.on)) match = { invite: body.matchKey, from: payload.from, fromName: body.name, lives: body.lives };
     say(`${body.name} opened a match at the Colosseum.`);
+  } else if (kind === 'match-cancel' && !mine) {
+    if (match && (match.id === body.matchKey || match.invite === body.matchKey)) {
+      const inside = !!match.on;
+      match = null;
+      if (inside) say('The match closed.');
+    }
   } else if (kind === 'match-end') {
     finishMatch(body);
   } else if (kind === 'emote') {
@@ -715,6 +723,10 @@ function interact() {
     advanceTalk();
     return;
   }
+  if (canLeaveThisMatch()) {
+    leaveMatch();
+    return;
+  }
   const npc = nearbyNpc();
   if (npc) {
     openTalk(npc.id);
@@ -731,6 +743,7 @@ function interact() {
 
 function promptText() {
   if (talk || card) return '';
+  if (canLeaveThisMatch()) return { text: 'E · Leave the match', x: actor.x, y: actor.y - 28 };
   const npc = nearbyNpc();
   if (npc) return { text: `E · Talk to ${NPC_BY_ID.get(npc.id)?.name || 'them'}`, x: npc.x, y: npc.y - 26 };
   const spot = nearbySpot();
@@ -1021,6 +1034,30 @@ function startMatch(lives) {
   actor = { ...actor, ...back };
   publish('match-open', { matchKey: id, lives, name: myName() });
   say(lives === 1 ? 'One life. Aim with the mouse, click to fire.' : 'Three lives. Aim with the mouse, click to fire.');
+  closeCard();
+  paintHud();
+}
+
+function peopleInMatch() {
+  if (!match || !match.id) return 0;
+  let count = 0;
+  for (const other of others.values()) {
+    if (other.match === match.id) count += 1;
+  }
+  return count;
+}
+
+function canLeaveThisMatch() {
+  return aloneInMatch(!!(match && match.on), peopleInMatch());
+}
+
+function leaveMatch() {
+  if (!canLeaveThisMatch()) return;
+  const id = match.id;
+  match = null;
+  publish('match-cancel', { matchKey: id });
+  publishPlace(true);
+  say('Left the match.');
   closeCard();
   paintHud();
 }
@@ -1774,7 +1811,7 @@ function rocketCard(spot) {
 function arenaCard(spot) {
   const buttons = [['One life', () => startMatch(1)], ['Three lives', () => startMatch(3)]];
   if (match && match.invite && !match.on) buttons.push([`Join ${match.fromName || 'the'} match`, joinMatch]);
-  if (match && match.on) buttons.push(['Leave the match', () => { match.on = false; closeCard(); paintHud(); }]);
+  if (canLeaveThisMatch()) buttons.push(['Leave the match', leaveMatch]);
   return openCard({
     title: 'The Colosseum of Friendship',
     lines: ['A fenced ring with cover. Pick a weapon on the item bar, then open a match. Friends can join and bet on their allies.'],
@@ -1865,6 +1902,7 @@ function paintGames() {
   const row = h('div', 'colo-row');
   row.append(button('Typing', () => startTyping(stage)), button('Click', () => startClick(stage)), button('Duel', () => startDuel()));
   els.panel.append(frameEl, row, h('p', 'colo-note', 'Ten seconds each. A win pays coins. Matches with weapons happen at the Colosseum gate in town.'));
+  if (duel && waitingDuel(duel.phase)) els.panel.append(button('Leave the duel', leaveDuel));
   if (duel && duel.phase === 'invited') els.panel.append(button('Accept duel', () => acceptDuel(stage, leftWall, rightWall)));
   if (duel && duel.phase === 'live') readyDuel(stage, leftWall, rightWall);
 }
@@ -2178,8 +2216,22 @@ function tickGames(now) {
   }
 }
 
+function leaveDuel() {
+  if (!duel || !waitingDuel(duel.phase)) return;
+  const round = duel.round;
+  duel = null;
+  els.spark = null;
+  publish('duel', { phase: 'cancel', round });
+  say('Left the duel.');
+  paintPanel();
+}
+
 function takeDuel(from, body) {
-  if (body.phase === 'invite' && from !== me()) {
+  if (body.phase === 'cancel' && duel && duel.round === body.round) {
+    duel = null;
+    els.spark = null;
+    say('The duel was called off.');
+  } else if (body.phase === 'invite' && from !== me()) {
     duel = { phase: 'invited', round: body.round, from, role: 'right', myScore: 0, theirScore: 0, startAt: 0 };
     say('Someone wants a paw-sword duel. See Games.');
   } else if (body.phase === 'accept' && duel && duel.round === body.round) {
@@ -2247,6 +2299,7 @@ function startDuel() {
   duel = { phase: 'invite', round, role: 'left', myScore: 0, theirScore: 0, startAt: 0 };
   publish('duel', { phase: 'invite', round });
   say('Waiting for the other person. Tap your wall when the spark is on it.');
+  paintPanel();
 }
 
 function acceptDuel(stage, leftWall, rightWall) {

@@ -64,7 +64,7 @@ export const CATALOG = [
 
 // trigger: hold keeps firing while the button is down; tap fires once per click.
 export const WEAPONS = {
-  rifle: { name: 'Rifle', trigger: 'hold', speed: 300, radius: 2, cooldown: 0.16, life: 0.9, damage: 1, spread: 0.1 },
+  rifle: { name: 'Rifle', trigger: 'hold', speed: 300, radius: 2, cooldown: 0.16 / 0.6, life: 0.9, damage: 1, spread: 0.1 },
   launcher: { name: 'Launcher', trigger: 'tap', speed: 130, radius: 5, cooldown: 0.75, life: 1.4, damage: 3, spread: 0.05, splash: 26 },
   beam: { name: 'Beam', trigger: 'hold', length: 120, drain: 0.55, recharge: 0.28, dps: 4 },
   fireball: { name: 'Fireball', trigger: 'tap', speed: 170, radius: 4, cooldown: 0.5, life: 1.1, damage: 2, spread: 0.06, burn: true },
@@ -843,6 +843,14 @@ export function respawn(start) {
 export function inArena(actor, arena = ARENA) {
   const r = arena.inner;
   return actor.x >= r.x && actor.x <= r.x + r.w && actor.y >= r.y && actor.y <= r.y + r.h;
+}
+
+export function aloneInMatch(matchOn, companyCount) {
+  return matchOn === true && companyCount < 1;
+}
+
+export function waitingDuel(phase) {
+  return phase === 'invite' || phase === 'invited';
 }
 
 // ---- Tab: chat or world -------------------------------------------------

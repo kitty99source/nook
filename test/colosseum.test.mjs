@@ -24,6 +24,7 @@ import {
   WIN_PAY,
   WORK_SECONDS,
   acceptTrade,
+  aloneInMatch,
   applyCatLoot,
   applyHit,
   applyPurse,
@@ -105,6 +106,7 @@ import {
   unlockPatch,
   unlockedSpan,
   useClue,
+  waitingDuel,
   walkingIntent,
   withinReach,
   worldMap,
@@ -600,6 +602,13 @@ test('the tavern pays more than the market, and a match keeps fighters in the ri
   assert.equal(buyDrink(drink.save).ok, false);
   const held = clampArena({ x: ARENA.inner.x - 50, y: ARENA.inner.y + ARENA.inner.h + 50 });
   assert.equal(inArena(held), true);
+  assert.equal(aloneInMatch(true, 0), true);
+  assert.equal(aloneInMatch(true, 1), false);
+  assert.equal(aloneInMatch(false, 0), false);
+  assert.equal(waitingDuel('invite'), true);
+  assert.equal(waitingDuel('invited'), true);
+  assert.equal(waitingDuel('live'), false);
+  assert.equal(WEAPONS.rifle.cooldown, 0.16 / 0.6);
   const back = respawn(ARENA.starts[0]);
   assert.equal(back.x, ARENA.starts[0].x);
   assert.ok(ARENA.covers.length >= 2);
