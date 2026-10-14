@@ -1105,6 +1105,19 @@ export function hitBox(actor) {
   return { x: actor.x - 6, y: actor.y - 14, w: 12, h: 14 };
 }
 
+// One live update. A gap bigger than a short step is a missed packet or a door.
+export const LIVE_PLACE_S = 0.05;
+export const LIVE_SNAP = 6;
+
+export function remoteStep(from, to, dt, snap = LIVE_SNAP, interval = LIVE_PLACE_S) {
+  const same = from && to && from.map === to.map;
+  const dx = (Number(to?.x) || 0) - (Number(from?.x) || 0);
+  const dy = (Number(to?.y) || 0) - (Number(from?.y) || 0);
+  if (!same || Math.hypot(dx, dy) > snap) return { x: to.x, y: to.y };
+  const k = Math.min(1, Math.max(0, Number(dt) || 0) / interval);
+  return { x: from.x + dx * k, y: from.y + dy * k };
+}
+
 // ---- Alien cats on the street -------------------------------------------
 
 export const ALIENS = {

@@ -1,5 +1,5 @@
 // The Colosseum of Friendship: a little town on Lantern Moon behind the chat.
-// Chat rules are untouched. Game state stays in this browser; positions travel as locked parcels.
+// Chat rules are untouched. The cat moves in this browser. Places, shots, and hits go out in the clear on the live socket.
 
 import { decryptJson, encryptJson } from './e2e.js';
 import { popBar, popup } from './popup.js';
@@ -59,6 +59,8 @@ import {
   giftTo,
   goreBits,
   hitBox,
+  LIVE_PLACE_S,
+  LIVE_SNAP,
   launchPlanet,
   mayEnter,
   moveFavourite,
@@ -76,6 +78,7 @@ import {
   releaseEscrow,
   releaseOffers,
   resolveShots,
+  remoteStep,
   respawn,
   rollAlien,
   saberBlocks,
@@ -193,7 +196,9 @@ const matchShots = [];
 const peerShots = [];
 const takenShots = new Set();
 const queued = new Map();
-const pendingPlaces = new Map();
+const liveQueue = [];
+let pendingPlace = null;
+let lastSent = -1;
 let liveSocket = null;
 let liveTries = 0;
 let draining = false;
@@ -473,7 +478,7 @@ function bindPointer() {
   room.querySelector('.pop-bar [data-role="min"]')?.addEventListener('click', () => setTimeout(toWorld, 0));
 }
 
-// ---- Locked parcels for the game --------------------------------------------------
+// ---- Live places, and locked parcels for the rest of the game ----------------------
 
 async function publish(kind, body) {
   const key = api && api.getGroupKey();
@@ -517,6 +522,67 @@ function grant(outcome) {
   paintHud();
 }
 
+function applyPlace(row) {
+  if (!row || row.iv || !row.memberId || row.memberId === me()) return;
+  if (!row.map || !Number.isFinite(Number(row.x)) || !Number.isFinite(Number(row.y))) return;
+  const prev = others.get(row.memberId);
+  if (prev && prev.at && row.at && row.at < prev.at) return;
+  const next = {
+    id: row.memberId,
+    name: row.name || prev?.name || '',
+    map: row.map,
+    x: row.x,
+    y: row.y,
+    facing: row.facing || 'down',
+    moving: row.moving ? 1 : 0,
+    aim: row.aim || 0,
+    weapon: row.weapon || '',
+    guard: row.guard ? 1 : 0,
+    beam: row.beam ? 1 : 0,
+    look: row.look || prev?.look || '',
+    colour: row.colour || prev?.colour || '',
+    match: row.match || '',
+    at: row.at || Date.now(),
+    step: prev?.step || 0,
+  };
+  const same = prev && prev.map === next.map;
+  const gap = same ? Math.hypot(next.x - prev.dx, next.y - prev.dy) : Infinity;
+  const glide = same && gap <= LIVE_SNAP;
+  next.dx = glide ? prev.dx : next.x;
+  next.dy = glide ? prev.dy : next.y;
+  next.seenMap = glide ? (prev.seenMap || prev.map) : next.map;
+  others.set(row.memberId, next);
+}
+
+function takeShot(shot) {
+  if (!shot || shot.from === me()) return;
+  if (shot.map && shot.map !== mapKey()) return;
+  if (shot.matchKey) {
+    if (!(match && match.on && shot.matchKey === match.id)) return;
+    if (!matchShots.some((item) => item.id === shot.id)) matchShots.push(shot);
+    return;
+  }
+  if (!peerShots.some((item) => item.id === shot.id)) peerShots.push(shot);
+}
+
+function takeHit(hit) {
+  if (!hit || hit.from === me()) return;
+  if (hit.map && hit.map !== mapKey()) return;
+  if (hit.to !== me()) {
+    if (hit.shotId) dropShot(hit.shotId);
+    return;
+  }
+  if (hit.shotId && takenShots.has(hit.shotId)) return;
+  if (guardUp()) {
+    const seg = saberSegment(chest(), aim);
+    blockEffect((seg.x0 + seg.x1) / 2, (seg.y0 + seg.y1) / 2);
+    return;
+  }
+  if (hit.shotId) takenShots.add(hit.shotId);
+  if (match && match.on && hit.matchKey === match.id) takeMatchHit(hit.from, hit.damage || 1);
+  else hurtMe(hit.damage || 1);
+}
+
 function applyParcel(payload, row) {
   if (!payload || payload.from !== row.memberId) return;
   const key = `${payload.kind}:${payload.from}:${payload.seq}`;
@@ -528,13 +594,7 @@ function applyParcel(payload, row) {
   if (kind === 'postcard') {
     rememberCard({ memberId: payload.from, name: body.name, coins: body.coins, wins: body.wins, seq: payload.seq });
   } else if (kind === 'place') {
-    if (mine) return;
-    const prev = others.get(payload.from);
-    const next = { ...body, id: payload.from, at: Date.now() };
-    next.dx = prev && prev.map === body.map ? prev.dx : body.x;
-    next.dy = prev && prev.map === body.map ? prev.dy : body.y;
-    next.step = prev ? prev.step || 0 : 0;
-    others.set(payload.from, next);
+    return;
   } else if (kind === 'send' && body.to === me()) {
     const got = transferIn(save.coins, body.amount);
     if (got.ok) {
@@ -555,26 +615,9 @@ function applyParcel(payload, row) {
   } else if (kind === 'duel') {
     takeDuel(payload.from, body);
   } else if (kind === 'shot') {
-    if (mine) return;
-    if (body.map && body.map !== mapKey()) return;
-    if (body.matchKey) {
-      if (!(match && match.on && body.matchKey === match.id)) return;
-      if (!matchShots.some((shot) => shot.id === body.id)) matchShots.push(body);
-    } else if (!peerShots.some((shot) => shot.id === body.id)) peerShots.push(body);
-  } else if (kind === 'hit' && body.to === me()) {
-    if (mine) return;
-    if (body.map && body.map !== mapKey()) return;
-    if (body.shotId && takenShots.has(body.shotId)) return;
-    if (guardUp()) {
-      const seg = saberSegment(chest(), aim);
-      blockEffect((seg.x0 + seg.x1) / 2, (seg.y0 + seg.y1) / 2);
-      return;
-    }
-    if (body.shotId) takenShots.add(body.shotId);
-    if (match && match.on && body.matchKey === match.id) takeMatchHit(payload.from, body.damage || 1);
-    else hurtMe(body.damage || 1);
-  } else if (kind === 'hit' && body.shotId) {
-    dropShot(body.shotId);
+    takeShot(body);
+  } else if (kind === 'hit') {
+    takeHit({ ...body, from: payload.from });
   } else if (kind === 'match-open' && !mine) {
     if (!(match && match.on)) match = { invite: body.matchKey, from: payload.from, fromName: body.name, lives: body.lives };
     say(`${body.name} opened a match at the Colosseum.`);
@@ -631,14 +674,6 @@ async function acceptParcel(row) {
   }
 }
 
-async function retryPlaces() {
-  if (!api || !api.getGroupKey()) return;
-  for (const [id, row] of pendingPlaces) {
-    const result = await acceptParcel(row);
-    if (result !== 'wait') pendingPlaces.delete(id);
-  }
-}
-
 async function drainQueue() {
   if (draining || !api || !api.getGroupKey()) return;
   draining = true;
@@ -665,12 +700,8 @@ function holdParcel(row) {
   queued.set(row.id, row);
 }
 
-async function ingestPlaces(rows) {
-  for (const row of rows || []) {
-    if (!row || !row.memberId) continue;
-    pendingPlaces.set(row.memberId, row);
-  }
-  await retryPlaces();
+function ingestPlaces(rows) {
+  for (const row of rows || []) applyPlace(row);
 }
 
 async function ingestParcel(row) {
@@ -686,7 +717,7 @@ async function pollGames() {
     if (!res.ok) return;
     const data = await res.json();
     if (Number.isFinite(data.pollMs) && data.pollMs >= 100) pollMs = data.pollMs;
-    await ingestPlaces(data.places);
+    ingestPlaces(data.places);
     for (const row of data.parcels || []) holdParcel(row);
     await drainQueue();
   } catch { /* the room can miss one tick */ }
@@ -708,10 +739,18 @@ function openLive() {
   ws.onmessage = (event) => {
     let msg;
     try { msg = JSON.parse(event.data); } catch { return; }
-    if (msg.type === 'places') void ingestPlaces(msg.places);
+    if (msg.type === 'places') ingestPlaces(msg.places);
+    if (msg.type === 'place') applyPlace(msg.place);
+    if (msg.type === 'shot') takeShot(msg.shot);
+    if (msg.type === 'hit') takeHit(msg.hit);
+    if (msg.type === 'gone' && msg.memberId) others.delete(msg.memberId);
     if (msg.type === 'parcel') void ingestParcel(msg.parcel);
   };
-  ws.onopen = () => { liveTries = 0; };
+  ws.onopen = () => {
+    liveTries = 0;
+    flushPlace();
+    flushLive();
+  };
   ws.onclose = () => {
     if (liveSocket === ws) liveSocket = null;
     if (!roomOpen()) return;
@@ -738,28 +777,96 @@ function schedulePoll() {
   }, pollMs);
 }
 
-function publishPlace(force = false) {
-  const body = {
+function placeBody() {
+  return {
     map: mapKey(),
     x: Math.round(actor.x),
     y: Math.round(actor.y),
-    f: actor.facing,
-    m: actor.moving ? 1 : 0,
-    look: save.look,
-    colour: save.colour,
-    name: myName(),
-    gun: weapon(),
+    facing: actor.facing,
+    moving: actor.moving ? 1 : 0,
     aim: Math.round(aim * 100) / 100,
+    weapon: weapon() || '',
     guard: saber.guardUntil > clock ? 1 : 0,
     beam: beam.on ? 1 : 0,
+    look: save.look || '',
+    colour: save.colour || '',
     match: match && match.on ? match.id : '',
   };
+}
+
+function flushPlace() {
+  const ws = liveSocket;
+  if (!pendingPlace || !ws || ws.readyState !== 1) return;
+  if (ws.bufferedAmount > 0) return;
+  const body = pendingPlace;
+  pendingPlace = null;
+  lastSent = clock;
+  lastPlaceSig = JSON.stringify(body);
+  try { ws.send(JSON.stringify({ type: 'place', place: body })); }
+  catch { pendingPlace = body; }
+}
+
+function flushLive() {
+  const ws = liveSocket;
+  if (!ws || ws.readyState !== 1) return;
+  while (liveQueue.length && ws.bufferedAmount === 0) {
+    const message = liveQueue[0];
+    try { ws.send(JSON.stringify(message)); }
+    catch { return; }
+    liveQueue.shift();
+  }
+}
+
+function sendLive(message) {
+  const ws = liveSocket;
+  if (ws && ws.readyState === 1 && ws.bufferedAmount === 0 && !liveQueue.length) {
+    try {
+      ws.send(JSON.stringify(message));
+      return;
+    } catch { /* hold the latest few */ }
+  }
+  if (liveQueue.length < 8) liveQueue.push(message);
+}
+
+function plainShot(shot) {
+  return {
+    id: shot.id,
+    map: shot.map,
+    gun: shot.gun,
+    x: shot.x,
+    y: shot.y,
+    vx: shot.vx,
+    vy: shot.vy,
+    r: shot.r,
+    life: shot.life,
+    damage: shot.damage,
+    splash: shot.splash || 0,
+    matchKey: shot.matchKey || '',
+  };
+}
+
+function sendHit(hit) {
+  sendLive({
+    type: 'hit',
+    hit: {
+      to: hit.to,
+      damage: hit.damage || 1,
+      shotId: hit.shotId || '',
+      matchKey: hit.matchKey || '',
+      map: hit.map || mapKey(),
+    },
+  });
+}
+
+function publishPlace(force = false) {
+  const body = placeBody();
   const sig = JSON.stringify(body);
-  if (!force && sig === lastPlaceSig) return;
-  lastPlaceSig = sig;
-  heartbeat = 0;
-  sentAt = 0;
-  publish('place', body);
+  if (!force && sig === lastPlaceSig && !pendingPlace) return;
+  pendingPlace = body;
+  if (force) {
+    lastSent = clock - LIVE_PLACE_S;
+    flushPlace();
+  }
 }
 
 function publishHome(open = atHome()) {
@@ -943,7 +1050,7 @@ function noteHit(hit, matchKey) {
   if (hit.shotId) takenShots.add(hit.shotId);
   if (matchKey) takeMatchHit(hit.from, hit.damage);
   else hurtMe(hit.damage || 1);
-  publish('hit', {
+  sendHit({
     to: me(),
     damage: hit.damage || 1,
     shotId: hit.shotId || '',
@@ -975,7 +1082,7 @@ function pullTrigger(first) {
       if (other.map !== mapKey()) continue;
       if (match && match.on && other.match !== match.id) continue;
       if (saberStrikes(chest(), aim, { x: other.dx, y: other.dy - 6 })) {
-        publish('hit', { to: other.id, damage: 1, matchKey: match && match.on ? match.id : '', map: mapKey() });
+        sendHit({ to: other.id, damage: 1, matchKey: match && match.on ? match.id : '', map: mapKey() });
       }
     }
     return;
@@ -989,7 +1096,7 @@ function pullTrigger(first) {
     shot.matchKey = match.id;
     matchShots.push(shot);
   } else myShots.push(shot);
-  publish('shot', shot);
+  sendLive({ type: 'shot', shot: plainShot(shot) });
 }
 
 function burst(x, y, colours, n, speed = 60, life = 0.5, size = 1) {
@@ -1091,7 +1198,7 @@ function stepCombat(dt) {
           if (other.map !== mapKey()) continue;
           if (match && match.on && other.match !== match.id) continue;
           if (segmentHitsRect(seg, hitBox({ x: other.dx, y: other.dy }), 1)) {
-            publish('hit', { to: other.id, damage: 1, matchKey: match && match.on ? match.id : '', map: mapKey() });
+            sendHit({ to: other.id, damage: 1, matchKey: match && match.on ? match.id : '', map: mapKey() });
             beam.hitAt = clock + 0.5;
           }
         }
@@ -1341,11 +1448,16 @@ function stepWorksTick(dt) {
 }
 
 function stepOthers(dt) {
-  const k = Math.min(1, dt / 0.1);
   for (const other of others.values()) {
-    other.dx += (other.x - other.dx) * k;
-    other.dy += (other.y - other.dy) * k;
-    if (other.m) other.step = (other.step || 0) + dt;
+    const at = remoteStep(
+      { x: other.dx, y: other.dy, map: other.seenMap || other.map },
+      { x: other.x, y: other.y, map: other.map },
+      dt,
+    );
+    other.dx = at.x;
+    other.dy = at.y;
+    other.seenMap = other.map;
+    if (other.moving) other.step = (other.step || 0) + dt;
   }
 }
 
@@ -1381,41 +1493,19 @@ function step(dt) {
   if (card && card.spot && Math.hypot(card.spot.x - actor.x, card.spot.y - actor.y) > (card.spot.reach || 24) + 24) closeCard();
 }
 
-let heartbeat = 0;
-let sentAt = 0;
-
 function netTick(dt) {
-  sentAt += dt;
-  heartbeat += dt;
-  const body = {
-    map: mapKey(),
-    x: Math.round(actor.x),
-    y: Math.round(actor.y),
-    f: actor.facing,
-    m: actor.moving ? 1 : 0,
-    look: save.look,
-    colour: save.colour,
-    name: myName(),
-    gun: weapon(),
-    aim: Math.round(aim * 100) / 100,
-    guard: saber.guardUntil > clock ? 1 : 0,
-    beam: beam.on ? 1 : 0,
-    match: match && match.on ? match.id : '',
-  };
+  const body = placeBody();
   const sig = JSON.stringify(body);
-  if (sig !== lastPlaceSig && sentAt >= 0.08) {
-    sentAt = 0;
-    heartbeat = 0;
-    lastPlaceSig = sig;
-    publish('place', body);
-  } else if (sig === lastPlaceSig && heartbeat >= 8) {
-    heartbeat = 0;
-    publish('place', body);
-  }
-  if (queued.size || pendingPlaces.size) {
-    void retryPlaces();
-    void drainQueue();
-  }
+  const due = clock - lastSent >= LIVE_PLACE_S;
+  if (sig !== lastPlaceSig) {
+    pendingPlace = body;
+    if (due) flushPlace();
+  } else if (clock - lastSent >= 4) {
+    pendingPlace = body;
+    flushPlace();
+  } else if (pendingPlace && due) flushPlace();
+  flushLive();
+  if (queued.size) void drainQueue();
   homeTimer += dt;
   if (atHome() && homeTimer > 1.5) {
     homeTimer = 0;
@@ -1541,8 +1631,8 @@ function draw(open) {
     }
     for (const o of othersHere()) {
       items.push({ y: o.dy, draw: () => {
-        drawCat(ctx, o.dx, o.dy, { look: o.look, suit: o.colour, facing: o.f, moving: !!o.m, step: o.step });
-        if (o.gun && o.gun !== 'saber') drawGun(ctx, o.gun, o.dx, o.dy - 8, o.aim || 0);
+        drawCat(ctx, o.dx, o.dy, { look: o.look, suit: o.colour, facing: o.facing, moving: !!o.moving, step: o.step });
+        if (o.weapon && o.weapon !== 'saber') drawGun(ctx, o.weapon, o.dx, o.dy - 8, o.aim || 0);
       } });
     }
     for (const alien of aliens) {
@@ -1590,8 +1680,8 @@ function drawEffects(ctx) {
   for (const shot of matchShots) drawShot(ctx, shot, clock);
   if (weapon() === 'beam' && beam.firing && beam.seg) drawBeam(ctx, beam.seg, clock);
   for (const o of othersHere()) {
-    if (o.beam && o.gun === 'beam') drawBeam(ctx, beamRay({ x: o.dx, y: o.dy - 8 }, o.aim || 0, WEAPONS.beam.length, [], map), clock);
-    if (o.gun === 'saber') drawSaber(ctx, saberSegment({ x: o.dx, y: o.dy - 8 }, o.aim || 0), '#9bf6ff', !!o.guard);
+    if (o.beam && o.weapon === 'beam') drawBeam(ctx, beamRay({ x: o.dx, y: o.dy - 8 }, o.aim || 0, WEAPONS.beam.length, [], map), clock);
+    if (o.weapon === 'saber') drawSaber(ctx, saberSegment({ x: o.dx, y: o.dy - 8 }, o.aim || 0), '#9bf6ff', !!o.guard);
   }
   if (weapon() === 'saber') drawSaber(ctx, saberSegment(chest(), aim), save.colour, guardUp());
   for (const s of swings) drawSwing(ctx, s.x, s.y, s.angle, WEAPONS.saber.arc, WEAPONS.saber.length + 4, save.colour, 0.25 - s.life);
@@ -2657,7 +2747,8 @@ export function settleColosseum() {
   clearTimeout(pollTimer);
   closeLive();
   queued.clear();
-  pendingPlaces.clear();
+  liveQueue.length = 0;
+  pendingPlace = null;
   takenShots.clear();
   peerShots.length = 0;
   const back = releaseEscrow(save.coins, save.escrow);

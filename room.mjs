@@ -1,5 +1,6 @@
 // The live room. The Node server and the Durable Object both call this.
 // Chat is locked parcels in memory. A host can persist them; a code deploy does not clear that store.
+// A place, a shot, and a hit are plain and live. They are not written into the parcel log.
 import crypto from 'node:crypto';
 
 const MAX_TEXT = 4000;
@@ -7,6 +8,10 @@ const PRESENCE_MS = 15000;
 const GAME_POLL_MS = 2000;
 const GAME_LOG = 500;
 const CAT_IDS = new Set(['cream', 'lilac', 'ginger', 'sage', 'bow', 'stripe', 'wave', 'disco']);
+const FACING = new Set(['up', 'down', 'left', 'right']);
+const LOOKS = new Set(['suit', 'visor', 'jet', 'alien']);
+const WEAPONS = new Set(['rifle', 'launcher', 'beam', 'fireball', 'saber']);
+const LIVE_KINDS = new Set(['place', 'shot', 'hit']);
 
 export const JSON_LIMIT = 256 * 1024;
 export const UPLOAD_LIMIT = 8 * 1024 * 1024;
@@ -69,6 +74,119 @@ function cleanKind(value) {
   return /^[a-z0-9-]{1,32}$/.test(kind) ? kind : '';
 }
 
+function cleanMap(value) {
+  const map = String(value || '');
+  return /^[a-z0-9:_-]{1,48}$/.test(map) ? map : '';
+}
+
+function cleanMatch(value) {
+  const match = String(value || '');
+  if (!match) return '';
+  return /^[a-zA-Z0-9:_-]{1,48}$/.test(match) ? match : '';
+}
+
+function cleanCoord(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < -400 || n > 6000) return null;
+  return Math.round(n);
+}
+
+function cleanAim(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 0;
+  return Math.round(Math.atan2(Math.sin(n), Math.cos(n)) * 100) / 100;
+}
+
+function flag(value) {
+  return value === 1 || value === true ? 1 : 0;
+}
+
+function cleanPlace(body, session, at) {
+  if (!body || typeof body !== 'object') return null;
+  const map = cleanMap(body.map);
+  const x = cleanCoord(body.x);
+  const y = cleanCoord(body.y);
+  const facing = FACING.has(body.facing) ? body.facing : '';
+  if (!map || x == null || y == null || !facing) return null;
+  const weapon = String(body.weapon || '');
+  if (weapon && !WEAPONS.has(weapon)) return null;
+  const look = LOOKS.has(body.look) ? body.look : '';
+  const colour = /^#[0-9a-fA-F]{6}$/.test(String(body.colour || '')) ? String(body.colour).toLowerCase() : '';
+  return {
+    memberId: session.memberId,
+    name: session.name,
+    map,
+    x,
+    y,
+    facing,
+    moving: flag(body.moving),
+    aim: cleanAim(body.aim),
+    weapon,
+    guard: flag(body.guard),
+    beam: flag(body.beam),
+    look,
+    colour,
+    match: cleanMatch(body.match),
+    at,
+  };
+}
+
+function cleanShot(body, session) {
+  if (!body || typeof body !== 'object') return null;
+  const id = String(body.id || '');
+  const gun = String(body.gun || '');
+  const map = cleanMap(body.map);
+  if (!/^[A-Za-z0-9_.:-]{1,64}$/.test(id) || !WEAPONS.has(gun) || gun === 'saber' || gun === 'beam' || !map) return null;
+  const x = cleanCoord(body.x);
+  const y = cleanCoord(body.y);
+  const vx = Number(body.vx);
+  const vy = Number(body.vy);
+  const life = Number(body.life);
+  const damage = Number(body.damage);
+  const radius = Number(body.r);
+  const splash = Number(body.splash || 0);
+  if (x == null || y == null) return null;
+  if (!Number.isFinite(vx) || !Number.isFinite(vy) || Math.abs(vx) > 800 || Math.abs(vy) > 800) return null;
+  if (!Number.isFinite(life) || life <= 0 || life > 3) return null;
+  if (!Number.isFinite(damage) || damage < 1 || damage > 20) return null;
+  if (!Number.isFinite(radius) || radius < 1 || radius > 8) return null;
+  if (!Number.isFinite(splash) || splash < 0 || splash > 64) return null;
+  const shot = {
+    id,
+    from: session.memberId,
+    map,
+    gun,
+    x,
+    y,
+    vx,
+    vy,
+    r: radius,
+    life,
+    damage,
+    splash,
+  };
+  const matchKey = cleanMatch(body.matchKey);
+  if (matchKey) shot.matchKey = matchKey;
+  return shot;
+}
+
+function cleanHit(body, session) {
+  if (!body || typeof body !== 'object') return null;
+  const to = String(body.to || '');
+  const map = cleanMap(body.map);
+  const damage = Math.round(Number(body.damage));
+  if (!/^[a-f0-9]{8,32}$/.test(to) || !map || !Number.isFinite(damage) || damage < 1 || damage > 10) return null;
+  const hit = { from: session.memberId, to, map, damage };
+  const shotId = String(body.shotId || '');
+  if (shotId) {
+    if (!/^[A-Za-z0-9_.:-]{1,64}$/.test(shotId)) return null;
+    hit.shotId = shotId;
+  }
+  const matchKey = cleanMatch(body.matchKey);
+  if (matchKey) hit.matchKey = matchKey;
+  return hit;
+}
+
 function json(status, body, persist = 'no') {
   return { status, json: body, persist };
 }
@@ -90,10 +208,11 @@ export function createRoom({ word, now = () => Date.now() } = {}) {
   let nextWrapId = 1;
   let nextOrder = 1;
   let fileStamp = 0;
+  let left = false;
 
-  function emit(message) {
+  function emit(message, except) {
     for (const fn of listeners) {
-      try { fn(message); } catch { /* one listener can miss a push */ }
+      try { fn(message, except); } catch { /* one listener can miss a push */ }
     }
   }
 
@@ -133,7 +252,15 @@ export function createRoom({ word, now = () => Date.now() } = {}) {
       if (at - session.lastSeen <= PRESENCE_MS) continue;
       sessions.delete(token);
       places.delete(session.memberId);
+      left = true;
+      emit({ type: 'gone', memberId: session.memberId });
     }
+  }
+
+  function takeLeave() {
+    const was = left;
+    left = false;
+    return was;
   }
 
   function presentIds() {
@@ -195,14 +322,19 @@ export function createRoom({ word, now = () => Date.now() } = {}) {
     const ids = presentIds();
     const rows = [];
     for (const [memberId, row] of places) {
-      if (!ids.has(memberId)) {
+      if (!ids.has(memberId) || !row || row.iv || !row.map) {
         places.delete(memberId);
         continue;
       }
-      rows.push(relayGame(row));
+      rows.push(row);
     }
-    rows.sort((a, b) => a.id - b.id);
+    rows.sort((a, b) => String(a.memberId).localeCompare(String(b.memberId)));
     return rows;
+  }
+
+  function finish(result) {
+    if (takeLeave() && result && result.persist !== 'now') result.persist = 'now';
+    return result;
   }
 
   function wordMatches(given) {
@@ -222,7 +354,9 @@ export function createRoom({ word, now = () => Date.now() } = {}) {
     if (!publicKey) return json(400, { error: 'The room could not lock.' });
     const photo = cleanPhoto(body.photo);
     if (photo == null) return json(400, { error: 'That picture could not be used.' });
-    return json(200, admit(name, publicKey, photo ? '' : cleanCat(body.cat), photo), 'now');
+    const admitted = admit(name, publicKey, photo ? '' : cleanCat(body.cat), photo);
+    emit({ type: 'places', places: placeRows() });
+    return json(200, admitted, 'now');
   }
 
   function handlePicture(req) {
@@ -318,6 +452,7 @@ export function createRoom({ word, now = () => Date.now() } = {}) {
     const session = sessionFor(tokenFrom(req));
     if (!session) return json(401, { error: 'Come in again.' });
     const body = req.json || {};
+    if (LIVE_KINDS.has(cleanKind(body.kind))) return json(400, { error: 'Send that on the live socket.' });
     const iv = cleanB64(body.iv, 8, 40);
     const data = cleanB64(body.data, 16, 12000);
     if (!iv || !data) return json(400, { error: 'That game parcel could not be carried.' });
@@ -331,10 +466,36 @@ export function createRoom({ word, now = () => Date.now() } = {}) {
       const dropped = games.splice(0, games.length - GAME_LOG);
       for (const item of dropped) seenGameParcels.delete(parcelKey(item.iv, item.data));
     }
-    if (cleanKind(body.kind) === 'place') places.set(session.memberId, row);
     const parcel = relayGame(row);
     emit({ type: 'parcel', parcel });
     return json(200, { parcel }, 'soon');
+  }
+
+  function receive(token, message, conn) {
+    const session = sessionFor(token);
+    if (!session) return { persist: takeLeave() ? 'leave' : 'no' };
+    dropQuiet();
+    if (!sessions.has(token)) return { persist: 'leave' };
+    if (!message || typeof message !== 'object' || Array.isArray(message)) {
+      return { persist: takeLeave() ? 'leave' : 'no' };
+    }
+    let persist = 'no';
+    if (message.type === 'place') {
+      const place = cleanPlace(message.place, session, now());
+      if (place) {
+        places.set(session.memberId, place);
+        emit({ type: 'place', place }, conn);
+        persist = 'later';
+      }
+    } else if (message.type === 'shot') {
+      const shot = cleanShot(message.shot, session);
+      if (shot) emit({ type: 'shot', shot }, conn);
+    } else if (message.type === 'hit') {
+      const hit = cleanHit(message.hit, session);
+      if (hit) emit({ type: 'hit', hit }, conn);
+    }
+    if (takeLeave()) persist = 'leave';
+    return { persist };
   }
 
   function handleUpload(req) {
@@ -423,7 +584,8 @@ export function createRoom({ word, now = () => Date.now() } = {}) {
       if (Array.isArray(slice)) games.push(...slice);
     }
     for (const pair of meta.places || []) {
-      if (pair && pair.length === 2 && pair[1]) places.set(pair[0], pair[1]);
+      if (!pair || pair.length !== 2 || !pair[1] || pair[1].iv || !pair[1].map) continue;
+      places.set(pair[0], pair[1]);
     }
     nextGameId = Number(meta.nextGameId) || (games.reduce((max, row) => Math.max(max, row.id || 0), 0) + 1);
     nextId = Number(meta.nextId) || (live.reduce((max, row) => Math.max(max, row.id || 0), 0) + 1);
@@ -451,6 +613,28 @@ export function createRoom({ word, now = () => Date.now() } = {}) {
       if (!sessionFor(token)) return null;
       return placeRows();
     },
+    takeLeave,
+    receive,
+    openLive(token) {
+      const session = sessionFor(token);
+      if (!session) return null;
+      const conn = crypto.randomBytes(8).toString('hex');
+      const inbox = [];
+      const stop = this.listen((message, except) => {
+        if (except === conn) return;
+        inbox.push(message);
+      });
+      inbox.push({ type: 'places', places: placeRows() });
+      takeLeave();
+      return {
+        conn,
+        inbox,
+        send(message) {
+          return receive(token, message, conn);
+        },
+        close() { stop(); },
+      };
+    },
     exportMeta,
     exportFile(id) {
       const bytes = files.get(id);
@@ -459,16 +643,16 @@ export function createRoom({ word, now = () => Date.now() } = {}) {
     restore,
     async handle(req) {
       const pathname = String(req.pathname || '');
-      if (pathname.includes('\0') || pathname.includes('..')) return json(404, { error: 'Not found' });
-      if (pathname === '/api/join') return handleJoin(req);
-      if (pathname === '/api/picture') return handlePicture(req);
-      if (pathname === '/api/send') return handleSend(req);
-      if (pathname === '/api/wrap') return handleWrap(req);
-      if (pathname === '/api/poll') return handlePoll(req);
-      if (pathname === '/api/game') return handleGame(req);
-      if (pathname === '/api/upload') return handleUpload(req);
-      if (pathname.startsWith('/uploads/')) return handleDownload(req);
-      return json(404, { error: 'Not found' });
+      if (pathname.includes('\0') || pathname.includes('..')) return finish(json(404, { error: 'Not found' }));
+      if (pathname === '/api/join') return finish(handleJoin(req));
+      if (pathname === '/api/picture') return finish(handlePicture(req));
+      if (pathname === '/api/send') return finish(handleSend(req));
+      if (pathname === '/api/wrap') return finish(handleWrap(req));
+      if (pathname === '/api/poll') return finish(handlePoll(req));
+      if (pathname === '/api/game') return finish(handleGame(req));
+      if (pathname === '/api/upload') return finish(handleUpload(req));
+      if (pathname.startsWith('/uploads/')) return finish(handleDownload(req));
+      return finish(json(404, { error: 'Not found' }));
     },
   };
 }

@@ -110,16 +110,18 @@ export class NookRoom {
     this.ctx = ctx;
     this.env = env;
     this.room = null;
-    this.sockets = new Set();
+    this.sockets = new Map();
     this.saving = false;
     this.saveSoon = false;
     this.savedFiles = -1;
+    this.placeWait = null;
+    this.placesDirty = false;
   }
 
   async ready() {
     if (this.room) return;
     this.room = createRoom({ word: this.env.NOOK_ROOM_WORD });
-    this.room.listen((message) => this.broadcast(message));
+    this.room.listen((message, except) => this.broadcast(message, except));
     const meta = await this.ctx.storage.get('meta');
     if (!meta) return;
     const slices = [];
@@ -149,12 +151,36 @@ export class NookRoom {
     this.savedFiles = this.room.fileStamp();
   }
 
-  broadcast(message) {
+  broadcast(message, except) {
     const text = JSON.stringify(message);
-    for (const socket of this.sockets) {
+    for (const [socket, conn] of this.sockets) {
+      if (except && conn === except) continue;
       try { socket.send(text); }
       catch { this.sockets.delete(socket); }
     }
+  }
+
+  markPlaces() {
+    this.placesDirty = true;
+    if (this.placeWait) return;
+    this.placeWait = (async () => {
+      try {
+        await new Promise((resolve) => setTimeout(resolve, 4000));
+        if (!this.placesDirty || !this.room) return;
+        this.placesDirty = false;
+        await this.scheduleSave(true);
+      } finally {
+        this.placeWait = null;
+        if (this.placesDirty) this.markPlaces();
+      }
+    })();
+    this.ctx.waitUntil(this.placeWait);
+  }
+
+  noteLive(outcome) {
+    if (!outcome) return;
+    if (outcome.persist === 'leave') this.scheduleSave(true);
+    else if (outcome.persist === 'later') this.markPlaces();
   }
 
   async writeState() {
@@ -208,12 +234,23 @@ export class NookRoom {
         const pair = new WebSocketPair();
         const client = pair[0];
         const server = pair[1];
+        const conn = crypto.randomUUID();
         server.accept();
-        this.sockets.add(server);
+        this.sockets.set(server, conn);
         const drop = () => this.sockets.delete(server);
         server.addEventListener('close', drop);
         server.addEventListener('error', drop);
+        server.addEventListener('message', (event) => {
+          let message;
+          try {
+            const raw = typeof event.data === 'string' ? event.data : new TextDecoder().decode(event.data);
+            if (raw.length > 8192) return;
+            message = JSON.parse(raw);
+          } catch { return; }
+          this.noteLive(this.room.receive(token, message, conn));
+        });
         server.send(JSON.stringify({ type: 'places', places: this.room.placesFor(token) || [] }));
+        this.noteLive(this.room.takeLeave() ? { persist: 'leave' } : null);
         return new Response(null, { status: 101, webSocket: client });
       }
       const result = await this.room.handle(await toRoomRequest(request));

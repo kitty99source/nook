@@ -20,9 +20,12 @@ if (!Number.isInteger(port) || port < 1 || port > 65535) {
 
 const room = createRoom({ word: process.env.NOOK_ROOM_WORD });
 const sockets = new Set();
-room.listen((message) => {
+room.listen((message, except) => {
   const text = JSON.stringify(message);
-  for (const client of sockets) client.send(text);
+  for (const client of sockets) {
+    if (except && client.conn === except) continue;
+    client.send(text);
+  }
 });
 
 function sendJson(res, status, body, extra = {}) {
@@ -323,10 +326,17 @@ server.on('upgrade', (req, socket, head) => {
     + '\r\n',
   );
   if (head?.length) socket.unshift(head);
-  const client = attachSocket(socket, () => sockets.delete(client));
+  const conn = crypto.randomUUID();
+  const client = attachSocket(socket, () => sockets.delete(client), (text) => {
+    let message;
+    try { message = JSON.parse(text); } catch { return; }
+    room.receive(token, message, conn);
+  });
+  client.conn = conn;
   sockets.add(client);
   try { socket.setNoDelay(true); } catch { /* best effort */ }
   client.send(JSON.stringify({ type: 'places', places: room.placesFor(token) || [] }));
+  room.takeLeave();
 });
 
 server.on('error', (error) => {

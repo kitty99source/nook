@@ -77,6 +77,7 @@ import {
   releaseEscrow,
   releaseOffers,
   resolveBeam,
+  remoteStep,
   resolveShots,
   respawn,
   rollAlien,
@@ -348,6 +349,18 @@ test('walking moves on both axes, stops at walls, and doors open when walked int
   let stuck = { ...spawnActor(town), x: tavern.x + 8, y: tavern.y - 20 };
   for (let i = 0; i < 20; i += 1) stuck = stepActor(stuck, { up: true }, town, 0.05);
   assert.ok(stuck.y > TOWN_BUILDING_TOP(town, 'tavern'));
+});
+
+test('a remote cat eases across one update and snaps a missed step or a door', () => {
+  const near = remoteStep({ x: 0, y: 0, map: 'town' }, { x: 4, y: 0, map: 'town' }, 0.05);
+  assert.equal(near.x, 4);
+  const half = remoteStep({ x: 0, y: 0, map: 'town' }, { x: 4, y: 0, map: 'town' }, 0.025);
+  assert.equal(half.x, 2);
+  const missed = remoteStep({ x: 0, y: 0, map: 'town' }, { x: 24, y: 0, map: 'town' }, 0.05);
+  assert.equal(missed.x, 24);
+  const door = remoteStep({ x: 10, y: 10, map: 'town' }, { x: 14, y: 10, map: 'tavern' }, 0.05);
+  assert.equal(door.x, 14);
+  assert.equal(door.y, 10);
 });
 
 function TOWN_BUILDING_TOP(town, id) {

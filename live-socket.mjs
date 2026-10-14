@@ -1,4 +1,4 @@
-// A small WebSocket writer for the local Node room. The browser only needs server pushes.
+// A small WebSocket writer for the local Node room. The browser sends places and hears the others.
 import { createHash } from 'node:crypto';
 
 const GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
@@ -57,7 +57,7 @@ function readFrame(buf) {
   return { opcode, payload, end: offset + maskLen + len };
 }
 
-export function attachSocket(socket, onClose) {
+export function attachSocket(socket, onClose, onMessage) {
   let buf = Buffer.alloc(0);
   let dead = false;
   const close = () => {
@@ -82,6 +82,12 @@ export function attachSocket(socket, onClose) {
         socket.end();
         close();
         return;
+      }
+      if (frame.opcode === 0x1) {
+        if (frame.payload.length <= 8192 && onMessage) {
+          try { onMessage(frame.payload.toString('utf8')); } catch { /* one bad message */ }
+        }
+        continue;
       }
       if (frame.opcode === 0x9) {
         try { writeFrame(socket, 0xA, frame.payload); } catch { close(); }
