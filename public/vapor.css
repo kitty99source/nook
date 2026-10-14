@@ -1,8 +1,10 @@
 /* Vaporwave scene for the vapor-* themes.
-   Markup comes from vapor-art.js and lives in <div id="vapor" aria-hidden="true">.
-   Only transform, opacity and clip-path are animated. Motion level comes from
-   #vapor[data-motion]: absent or "full" = everything, "calm" = rise, bob,
-   glitch and a slow floor, "off" = still picture. */
+   Markup comes from vapor-art.js and lives in <div id="vapor" aria-hidden="true">
+   (full page) or <div id="vapor-chat" aria-hidden="true"> (chat window, from
+   panelSceneMarkup). Only transform, opacity and clip-path are animated.
+   Motion level comes from [data-motion] on either root: absent or "full" =
+   everything, "calm" = rise, bob, glitch and a slow floor, "off" = still
+   picture. */
 
 /* ------------------------------------------------------------ scene tokens */
 
@@ -101,21 +103,51 @@ body[data-theme="vapor-pastel"] {
 
 /* ------------------------------------------------------------------ layout */
 
-#vapor {
-  position: fixed;
-  inset: 0;
+#vapor,
+#vapor-chat,
+.vapor-panel {
   z-index: 0;
   overflow: hidden;
   pointer-events: none;
-  contain: strict;
   user-select: none;
   --vw-cell-time: 5s;
 }
 
-body:not([data-theme^="vapor-"]) #vapor { display: none; }
+#vapor {
+  position: fixed;
+  inset: 0;
+  contain: strict;
+}
 
-#vapor > * { position: absolute; }
-#vapor svg { display: block; overflow: hidden; }
+/* Chat-window copy of the scene, about 420 x 540. Children size against it
+   in cqw/cqh, so the custom properties below resolve inside the panel. */
+#vapor-chat,
+.vapor-panel {
+  position: absolute;
+  inset: 0;
+  container-type: size;
+  --vw-horizon: 58%;
+  --vw-sun-size: min(70cqw, 55cqh);
+  --vw-rise-from: 44cqh;
+  --vw-cloud-shift: 8cqw;
+}
+
+body:not([data-theme^="vapor-"]) #vapor,
+body:not([data-theme^="vapor-"]) #vapor-chat { display: none; }
+
+#vapor > *,
+#vapor-chat > *,
+.vapor-panel > * { position: absolute; }
+
+#vapor svg,
+#vapor-chat svg,
+.vapor-panel svg { display: block; overflow: hidden; }
+
+.vapor-panel-wash {
+  inset: 0;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--paper) 35%, transparent);
+}
 
 .vapor-sky {
   inset: 0;
@@ -232,6 +264,12 @@ body[data-theme="vapor-pastel"] .vapor-sun-ghost { mix-blend-mode: normal; }
   max-height: calc(var(--vw-horizon) * 0.62);
 }
 
+#vapor-chat .vapor-mtn,
+.vapor-panel .vapor-mtn {
+  width: 48cqw;
+  height: 24cqw;
+}
+
 .vapor-mtn--left { left: 0; }
 .vapor-mtn--right { right: 0; }
 
@@ -253,6 +291,9 @@ body[data-theme="vapor-pastel"] .vapor-sun-ghost { mix-blend-mode: normal; }
 .vapor-cloud--1 { left: 5vw; top: 26%; width: min(18vw, 240px); }
 .vapor-cloud--2 { right: 9vw; top: 12%; width: min(13vw, 170px); }
 .vapor-cloud--3 { right: 24vw; top: 58%; width: min(16vw, 210px); }
+#vapor-chat .vapor-cloud--1, .vapor-panel .vapor-cloud--1 { left: 4cqw; top: 24%; width: 36cqw; }
+#vapor-chat .vapor-cloud--2, .vapor-panel .vapor-cloud--2 { right: 6cqw; top: 8%; width: 26cqw; }
+#vapor-chat .vapor-cloud--3, .vapor-panel .vapor-cloud--3 { right: 10cqw; top: 58%; width: 30cqw; }
 .vw-cloud-body { fill: var(--vw-cloud); stroke: var(--vw-moon); stroke-width: 1.2; stroke-opacity: 0.35; }
 
 /* floor */
@@ -375,7 +416,7 @@ body[data-theme="vapor-neon"] .vapor-scanlines { display: block; }
 /* -------------------------------------------------------------- keyframes */
 
 @keyframes vapor-rise {
-  from { transform: translateY(38vh); }
+  from { transform: translateY(var(--vw-rise-from, 38vh)); }
   to { transform: translateY(0); }
 }
 
@@ -437,7 +478,7 @@ body[data-theme="vapor-neon"] .vapor-scanlines { display: block; }
 
 @keyframes vapor-cloud-drift {
   from { transform: translateX(0); }
-  to { transform: translateX(6vw); }
+  to { transform: translateX(var(--vw-cloud-shift, 6vw)); }
 }
 
 /* full motion only */
@@ -493,34 +534,49 @@ body[data-theme="vapor-pastel"] .msg-glitch::after { mix-blend-mode: multiply; }
 
 /* ------------------------------------------------------------ motion levels */
 
-#vapor[data-motion="calm"] { --vw-cell-time: 14s; }
+#vapor[data-motion="calm"],
+#vapor-chat[data-motion="calm"] { --vw-cell-time: 14s; }
 
 #vapor[data-motion="calm"] .vapor-star-g,
 #vapor[data-motion="calm"] .vapor-blob,
-#vapor[data-motion="calm"] .vapor-cloud { animation: none; }
+#vapor[data-motion="calm"] .vapor-cloud,
+#vapor-chat[data-motion="calm"] .vapor-star-g,
+#vapor-chat[data-motion="calm"] .vapor-cloud { animation: none; }
 
 #vapor[data-motion="off"] *,
-#vapor[data-motion="off"] *::after { animation: none !important; }
+#vapor[data-motion="off"] *::after,
+#vapor-chat[data-motion="off"] *,
+#vapor-chat[data-motion="off"] *::after { animation: none !important; }
 
-#vapor[data-motion="off"] .vapor-sun-ghost { display: none; }
+#vapor[data-motion="off"] .vapor-sun-ghost,
+#vapor-chat[data-motion="off"] .vapor-sun-ghost { display: none; }
 
 /* Sun waits below the horizon until the attribute is removed. */
 #vapor[data-vapor-hold] .vapor-sun-rise,
-#vapor[data-vapor-hold] .vapor-sun-rise * { animation-play-state: paused; }
+#vapor[data-vapor-hold] .vapor-sun-rise *,
+#vapor-chat[data-vapor-hold] .vapor-sun-rise,
+#vapor-chat[data-vapor-hold] .vapor-sun-rise * { animation-play-state: paused; }
 
-/* Tab hidden: freeze everything. The flag may sit on <html>, <body> or #vapor. */
+/* Tab hidden: freeze everything. The flag may sit on <html>, <body>, #vapor
+   or #vapor-chat. */
 [data-vapor-paused] #vapor *,
-#vapor[data-vapor-paused] * { animation-play-state: paused !important; }
+#vapor[data-vapor-paused] *,
+[data-vapor-paused] #vapor-chat *,
+#vapor-chat[data-vapor-paused] * { animation-play-state: paused !important; }
 
 @media (prefers-reduced-motion: reduce) {
   #vapor *,
-  #vapor *::after { animation: none !important; }
-  #vapor .vapor-sun-ghost { display: none; }
+  #vapor *::after,
+  #vapor-chat *,
+  #vapor-chat *::after { animation: none !important; }
+  #vapor .vapor-sun-ghost,
+  #vapor-chat .vapor-sun-ghost { display: none; }
   body[data-theme^="vapor-"] .msg-glitch,
   body[data-theme^="vapor-"] .msg-glitch::after { animation: none !important; }
   body[data-theme^="vapor-"] .msg-glitch::after { display: none; }
 }
 
 @media print {
-  #vapor { display: none !important; }
+  #vapor,
+  #vapor-chat { display: none !important; }
 }

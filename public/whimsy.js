@@ -173,6 +173,7 @@ const LOOK_KEY = 'nook-look';
 const THEMES = ['paper', 'dark', 'cyberpunk', 'akira', 'vapor-pastel', 'vapor-sunset', 'vapor-neon'];
 const SEQUIN_LOOKS = ['pixel', 'sleek', 'matrix'];
 const COLOUR_WAYS = ['silver', 'rainbow', 'crimson', 'neon', 'akira', 'matrix'];
+const WINDOW_STYLES = ['classic', 'retro90'];
 const THEME_BAR = {
   paper: '#efe8dc',
   dark: '#100e0c',
@@ -255,7 +256,15 @@ function wayStops(way, sleek) {
 }
 
 function loadLook() {
-  const look = { theme: 'paper', disco: false, sequins: false, sequinLook: 'pixel', colour: 'silver' };
+  const look = {
+    theme: 'paper',
+    disco: false,
+    sequins: false,
+    sequinLook: 'pixel',
+    colour: 'silver',
+    chatScene: true,
+    windowStyle: 'retro90',
+  };
   try {
     const data = JSON.parse(localStorage.getItem(LOOK_KEY) || '');
     if (data && typeof data === 'object') {
@@ -264,6 +273,12 @@ function loadLook() {
       if (typeof data.sequins === 'boolean') look.sequins = data.sequins;
       if (SEQUIN_LOOKS.includes(data.sequinLook)) look.sequinLook = data.sequinLook;
       if (COLOUR_WAYS.includes(data.colour)) look.colour = data.colour;
+      if (typeof data.chatScene === 'boolean') look.chatScene = data.chatScene;
+      if (typeof data.windowStyle === 'string' && WINDOW_STYLES.includes(data.windowStyle)) {
+        look.windowStyle = data.windowStyle;
+      } else if (String(look.theme).startsWith('vapor-')) {
+        look.windowStyle = 'retro90';
+      }
     }
   } catch {
     // A missing choice just starts on paper.
@@ -281,6 +296,8 @@ function saveLook() {
       sequins: look.sequins,
       sequinLook: look.sequinLook,
       colour: look.colour,
+      chatScene: look.chatScene,
+      windowStyle: look.windowStyle,
     }));
   } catch {
     // Private mode still keeps the choice until the tab closes.
@@ -810,6 +827,15 @@ function syncControls() {
   const sequinBtn = document.querySelector('#sequin-btn');
   if (discoBtn) discoBtn.setAttribute('aria-pressed', look.disco ? 'true' : 'false');
   if (sequinBtn) sequinBtn.setAttribute('aria-pressed', look.sequins ? 'true' : 'false');
+  const chatSceneBtn = document.querySelector('#chat-scene-btn');
+  if (chatSceneBtn) chatSceneBtn.setAttribute('aria-pressed', look.chatScene ? 'true' : 'false');
+  for (const btn of document.querySelectorAll('#window-choices button')) {
+    btn.setAttribute('aria-checked', btn.dataset.window === look.windowStyle ? 'true' : 'false');
+  }
+  const vaporOptions = document.querySelector('#vapor-options');
+  if (vaporOptions) vaporOptions.hidden = !look.theme.startsWith('vapor-');
+  document.body.dataset.window = look.windowStyle;
+  document.body.dataset.chatScene = look.chatScene ? 'on' : 'off';
   const note = document.querySelector('#colour-note');
   if (note) {
     const showing = look.theme === 'dark' && look.disco;
@@ -1001,6 +1027,20 @@ export function mountWhimsy() {
     saveLook();
     applyRoom();
   });
+  const chatSceneBtn = document.querySelector('#chat-scene-btn');
+  chatSceneBtn?.addEventListener('click', () => {
+    look.chatScene = chatSceneBtn.getAttribute('aria-pressed') !== 'true';
+    saveLook();
+    syncControls();
+  });
+  for (const btn of document.querySelectorAll('#window-choices button')) {
+    btn.addEventListener('click', () => {
+      if (!WINDOW_STYLES.includes(btn.dataset.window)) return;
+      look.windowStyle = btn.dataset.window;
+      saveLook();
+      syncControls();
+    });
+  }
 
   function summonAffirmation() {
     const card = document.createElement('section');

@@ -73,6 +73,85 @@ test('vapor.js has no external URLs', () => {
   assert.equal(/url\s*\(/.test(src), false);
   assert.match(src, /export function initVapor/);
   assert.match(src, /sceneMarkup/);
+  assert.match(src, /panelSceneMarkup/);
   assert.match(src, /data-vapor-hold/);
   assert.match(src, /visibilitychange/);
+});
+
+test('whimsy.js source defines WINDOW_STYLES', () => {
+  const src = read('public/whimsy.js');
+  assert.match(src, /\bWINDOW_STYLES\b/);
+  assert.match(src, /'classic'/);
+  assert.match(src, /'retro90'/);
+});
+
+test('index.html has chat scene and window style controls', () => {
+  const html = read('public/index.html');
+  assert.match(html, /id="chat-scene-btn"/);
+  assert.match(html, /data-window="classic"[^>]*>Current look</);
+  assert.match(html, /data-window="retro90"[^>]*>Retro 90s</);
+});
+
+test('app.css retro90 rules cover send, pop-bar, and pop-btn', () => {
+  const css = read('public/app.css');
+  const at = css.indexOf('[data-window="retro90"]');
+  assert.ok(at >= 0, 'retro90 rules');
+  const chunk = css.slice(at);
+  assert.match(chunk, /#send/);
+  assert.match(chunk, /\.pop-bar/);
+  assert.match(chunk, /\.pop-btn/);
+});
+
+test('sequin cloth draws above the chat scene', () => {
+  const css = read('public/app.css');
+  const rule = css.match(/\.sequin-cloth\s*\{[^}]+\}/);
+  assert.ok(rule, 'sequin-cloth rule');
+  assert.match(rule[0], /z-index:\s*1/);
+});
+
+test('vapor-art.js exports panelSceneMarkup', () => {
+  const src = read('public/vapor-art.js');
+  assert.match(src, /export function panelSceneMarkup/);
+});
+
+function hexChannels(hex) {
+  const raw = hex.replace('#', '');
+  const full = raw.length === 3 ? raw.split('').map((ch) => ch + ch).join('') : raw;
+  const n = Number.parseInt(full, 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+function channelLinear(value) {
+  const s = value / 255;
+  return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+}
+
+function contrastRatio(a, b) {
+  const lum = (hex) => {
+    const [r, g, bch] = hexChannels(hex).map(channelLinear);
+    return 0.2126 * r + 0.7152 * g + 0.0722 * bch;
+  };
+  const lighter = Math.max(lum(a), lum(b));
+  const darker = Math.min(lum(a), lum(b));
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
+function retroToken(css, name) {
+  const at = css.indexOf('[data-window="retro90"]');
+  assert.ok(at >= 0, 'retro90 block');
+  const chunk = css.slice(at, at + 900);
+  const found = chunk.match(new RegExp(`${name}:\\s*(#[0-9a-fA-F]{3,8})`));
+  assert.ok(found, name);
+  return found[1];
+}
+
+test('retro90 text and bubble colours reach 4.5 contrast', () => {
+  const css = read('public/app.css');
+  const ink = retroToken(css, '--ink');
+  const paper = retroToken(css, '--paper');
+  const bubble = retroToken(css, '--bubble');
+  const warn = retroToken(css, '--warn');
+  assert.ok(contrastRatio(ink, paper) >= 4.5, `ink on paper ${ink} ${paper}`);
+  assert.ok(contrastRatio(ink, bubble) >= 4.5, `ink on bubble ${ink} ${bubble}`);
+  assert.ok(contrastRatio(warn, paper) >= 4.5, `warn on paper ${warn} ${paper}`);
 });

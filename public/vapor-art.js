@@ -322,3 +322,20 @@ export function sceneMarkup(mode) {
   if (m === 'neon') parts.push(scanlineMarkup());
   return parts.join('');
 }
+
+/**
+ * The chat-window scene for one mode: sky, stars (neon, sunset), sun,
+ * mountains (neon) or clouds (pastel), floor, and a paper wash on top. No
+ * blobs, moon or scanlines. Returns the inner layers only; the caller supplies
+ * the root <div id="vapor-chat" aria-hidden="true"> (or any .vapor-panel).
+ */
+export function panelSceneMarkup(mode) {
+  const m = normaliseMode(mode);
+  const parts = [skyMarkup(m)];
+  if (m !== 'pastel') parts.push(starsMarkup());
+  parts.push(sunMarkup(m));
+  if (m === 'neon') parts.push(mountainsSvg());
+  if (m === 'pastel') parts.push(`<div class="vapor-clouds">${cloudsSvg()}</div>`);
+  parts.push(floorMarkup(m), '<div class="vapor-panel-wash"></div>');
+  return parts.join('');
+}

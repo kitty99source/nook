@@ -1,5 +1,5 @@
 // Mounts the vaporwave scene from vapor-art.js. No inline styles, no network.
-import { sceneMarkup } from './vapor-art.js';
+import { panelSceneMarkup, sceneMarkup } from './vapor-art.js';
 
 const REDUCE = '(prefers-reduced-motion: reduce)';
 const MAX_SHIFT = 12;
@@ -17,7 +17,9 @@ export function initVapor() {
 
   const reduceQuery = window.matchMedia(REDUCE);
   let root = null;
+  let chat = null;
   let mode = '';
+  let chatMode = '';
   let tx = 0;
   let ty = 0;
   let cx = 0;
@@ -45,16 +47,55 @@ export function initVapor() {
     root.removeAttribute('data-py');
   }
 
+  function mirrorChatMotion() {
+    if (!chat || !root || !root.dataset.motion) return;
+    if (chat.dataset.motion !== root.dataset.motion) chat.dataset.motion = root.dataset.motion;
+  }
+
+  function mirrorChatHold() {
+    if (!chat) return;
+    if (passedDoor()) chat.removeAttribute('data-vapor-hold');
+    else chat.setAttribute('data-vapor-hold', '');
+  }
+
   function applyMotion() {
     if (!root) return;
     root.dataset.motion = reduced() ? 'off' : 'full';
+    mirrorChatMotion();
     if (reduced()) clearShift();
   }
 
   function holdSun() {
-    if (!root) return;
-    if (passedDoor()) root.removeAttribute('data-vapor-hold');
-    else root.setAttribute('data-vapor-hold', '');
+    if (root) {
+      if (passedDoor()) root.removeAttribute('data-vapor-hold');
+      else root.setAttribute('data-vapor-hold', '');
+    }
+    mirrorChatHold();
+  }
+
+  function syncChat() {
+    const theme = document.body.dataset.theme || '';
+    const room = document.querySelector('#room');
+    const on = theme.startsWith('vapor-') && document.body.dataset.chatScene === 'on' && !!room;
+    if (!on) {
+      if (chat) chat.remove();
+      chat = null;
+      chatMode = '';
+      return;
+    }
+    if (!chat || !chat.isConnected) {
+      chat = document.createElement('div');
+      chat.id = 'vapor-chat';
+      chat.setAttribute('aria-hidden', 'true');
+      chatMode = '';
+    }
+    if (room.firstElementChild !== chat) room.prepend(chat);
+    if (chatMode !== theme) {
+      chat.innerHTML = panelSceneMarkup(theme);
+      chatMode = theme;
+    }
+    mirrorChatHold();
+    mirrorChatMotion();
   }
 
   function syncPause() {
@@ -93,6 +134,7 @@ export function initVapor() {
     const theme = document.body.dataset.theme || '';
     if (!theme.startsWith('vapor-')) {
       drop();
+      syncChat();
       return;
     }
     if (!root || mode !== theme) build(theme);
@@ -100,6 +142,7 @@ export function initVapor() {
       applyMotion();
       holdSun();
     }
+    syncChat();
   }
 
   function step() {
@@ -127,7 +170,7 @@ export function initVapor() {
 
   new MutationObserver(sync).observe(document.body, {
     attributes: true,
-    attributeFilter: ['data-theme'],
+    attributeFilter: ['data-theme', 'data-chat-scene'],
   });
 
   const room = document.querySelector('#room');
