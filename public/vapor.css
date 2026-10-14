@@ -1,0 +1,526 @@
+/* Vaporwave scene for the vapor-* themes.
+   Markup comes from vapor-art.js and lives in <div id="vapor" aria-hidden="true">.
+   Only transform, opacity and clip-path are animated. Motion level comes from
+   #vapor[data-motion]: absent or "full" = everything, "calm" = rise, bob,
+   glitch and a slow floor, "off" = still picture. */
+
+/* ------------------------------------------------------------ scene tokens */
+
+body[data-theme="vapor-neon"] {
+  --vw-horizon: 62vh;
+  --vw-sun-size: min(46vmin, 540px);
+  --vw-sky-top: #06021a;
+  --vw-sky-mid: #170634;
+  --vw-sky-bottom: #3d0b63;
+  --vw-sun-a: #ff2bd6;
+  --vw-sun-b: #ff1fb4;
+  --vw-grid: #2de2ff;
+  --vw-grid-soft: rgba(45, 226, 255, 0.07);
+  --vw-glow: rgba(255, 43, 214, 0.55);
+  --vw-floor-a: #1b0536;
+  --vw-floor-b: #04010c;
+  --vw-haze: #33094f;
+  --vw-mtn-1: #0f0628;
+  --vw-mtn-2: #170a3a;
+  --vw-mtn-3: #21104e;
+  --vw-mtn-hot: #ff2bd6;
+  --vw-star: #e8f6ff;
+  --vw-moon: #c9a8ff;
+  --vw-cloud: #ffffff;
+  --vw-chrome-1: #2de2ff;
+  --vw-chrome-2: #ff2bd6;
+  --vw-chrome-3: #7a2cff;
+  --vw-chrome-shade: #12053a;
+  --vw-glitch-a: #00f0ff;
+  --vw-glitch-b: #ff006e;
+  --vw-shadow-hard: #ff2bd6;
+  --vw-scanline: rgba(0, 0, 0, 0.38);
+}
+
+body[data-theme="vapor-sunset"] {
+  --vw-horizon: 60vh;
+  --vw-sun-size: min(44vmin, 520px);
+  --vw-sky-top: #0e1240;
+  --vw-sky-mid: #4b1e7c;
+  --vw-sky-bottom: #ff7ab4;
+  --vw-sun-a: #ffd76a;
+  --vw-sun-b: #ff2e88;
+  --vw-grid: #ffe3f4;
+  --vw-grid-soft: rgba(255, 255, 255, 0.06);
+  --vw-glow: rgba(255, 120, 175, 0.6);
+  --vw-floor-a: #f4e8ff;
+  --vw-floor-b: #1b1142;
+  --vw-haze: #ff8fc4;
+  --vw-mtn-1: #24125a;
+  --vw-mtn-2: #2e186c;
+  --vw-mtn-3: #3a1f80;
+  --vw-mtn-hot: #ff7ab4;
+  --vw-star: #fff4fb;
+  --vw-moon: #ffd9f0;
+  --vw-cloud: #ffffff;
+  --vw-chrome-1: #ff7ccf;
+  --vw-chrome-2: #7cbcff;
+  --vw-chrome-3: #9dffd9;
+  --vw-chrome-shade: #4a2190;
+  --vw-glitch-a: #3ff2ff;
+  --vw-glitch-b: #ff4fa8;
+  --vw-shadow-hard: #1a0f3a;
+  --vw-scanline: rgba(0, 0, 0, 0.25);
+}
+
+body[data-theme="vapor-pastel"] {
+  --vw-horizon: 64vh;
+  --vw-sun-size: min(34vmin, 400px);
+  --vw-sky-top: #ffb8dd;
+  --vw-sky-mid: #e8cdf7;
+  --vw-sky-bottom: #a6e3ff;
+  --vw-sun-a: #fff0f8;
+  --vw-sun-b: #ff8fc8;
+  --vw-grid: #ffffff;
+  --vw-grid-soft: rgba(255, 255, 255, 0.5);
+  --vw-glow: rgba(255, 255, 255, 0.7);
+  --vw-floor-a: #c9b4ff;
+  --vw-floor-b: #ffbfe2;
+  --vw-haze: #dccbff;
+  --vw-mtn-1: #c9b4ff;
+  --vw-mtn-2: #b9a2f5;
+  --vw-mtn-3: #d8c8ff;
+  --vw-mtn-hot: #ffffff;
+  --vw-star: #ffffff;
+  --vw-moon: #b48df0;
+  --vw-cloud: #ffffff;
+  --vw-chrome-1: #ffffff;
+  --vw-chrome-2: #e3cfff;
+  --vw-chrome-3: #a9e4ff;
+  --vw-chrome-shade: #9a7fd0;
+  --vw-glitch-a: #3fd8ff;
+  --vw-glitch-b: #ff5fae;
+  --vw-shadow-hard: #8a6bc4;
+  --vw-scanline: rgba(90, 60, 140, 0.12);
+}
+
+/* ------------------------------------------------------------------ layout */
+
+#vapor {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  contain: strict;
+  user-select: none;
+  --vw-cell-time: 5s;
+}
+
+body:not([data-theme^="vapor-"]) #vapor { display: none; }
+
+#vapor > * { position: absolute; }
+#vapor svg { display: block; overflow: hidden; }
+
+.vapor-sky {
+  inset: 0;
+  background: linear-gradient(
+    to bottom,
+    var(--vw-sky-top) 0%,
+    var(--vw-sky-mid) calc(var(--vw-horizon) * 0.62),
+    var(--vw-sky-bottom) var(--vw-horizon)
+  );
+}
+
+.vapor-flatgrid {
+  inset: 0;
+  background-image:
+    linear-gradient(var(--vw-grid-soft) 1px, transparent 1px),
+    linear-gradient(90deg, var(--vw-grid-soft) 1px, transparent 1px);
+  background-size: 48px 48px;
+  background-position: center top;
+}
+
+body[data-theme="vapor-pastel"] .vapor-flatgrid { background-size: 56px 56px; }
+
+.vapor-holo {
+  inset: 0 0 calc(100% - var(--vw-horizon)) 0;
+  background:
+    radial-gradient(ellipse 40% 34% at 18% 30%, rgba(255, 143, 210, 0.38), transparent 70%),
+    radial-gradient(ellipse 34% 30% at 82% 22%, rgba(134, 198, 255, 0.34), transparent 70%),
+    radial-gradient(ellipse 46% 30% at 62% 74%, rgba(166, 255, 224, 0.22), transparent 70%);
+}
+
+/* stars */
+
+.vapor-stars {
+  inset: 0 0 calc(100% - var(--vw-horizon)) 0;
+  width: 100%;
+  height: var(--vw-horizon);
+}
+
+.vapor-star-g { fill: var(--vw-star); }
+.vapor-star-g2 { opacity: 0.7; }
+.vapor-star-g3 { opacity: 0.45; }
+.vapor-sparkles { opacity: 0.85; }
+body[data-theme="vapor-pastel"] .vapor-star-g1,
+body[data-theme="vapor-pastel"] .vapor-star-g2,
+body[data-theme="vapor-pastel"] .vapor-star-g3 { display: none; }
+
+/* moon (pastel) */
+
+.vapor-moon {
+  left: 30vw;
+  top: 9vh;
+  width: min(11vmin, 120px);
+  height: min(11vmin, 120px);
+}
+
+.vw-moon-body { fill: var(--vw-moon); }
+
+/* sun */
+
+.vapor-sun-rise {
+  left: 50%;
+  top: calc(var(--vw-horizon) - var(--vw-sun-size) * 0.72);
+  width: var(--vw-sun-size);
+  height: var(--vw-sun-size);
+  margin-left: calc(var(--vw-sun-size) / -2);
+  will-change: transform;
+  animation: vapor-rise 9s steps(18, end) both;
+}
+
+.vapor-sun-bob {
+  position: absolute;
+  inset: 0;
+  animation: vapor-bob 14s ease-in-out 9s infinite alternate both;
+}
+
+.vapor-sun-glow {
+  position: absolute;
+  inset: -34%;
+  background: radial-gradient(circle, var(--vw-glow) 0%, transparent 64%);
+}
+
+.vapor-sun,
+.vapor-sun-ghost {
+  position: absolute;
+  inset: 0;
+}
+
+.vapor-sun svg,
+.vapor-sun-ghost svg { width: 100%; height: 100%; }
+
+.vw-stop-sun-a { stop-color: var(--vw-sun-a); }
+.vw-stop-sun-b { stop-color: var(--vw-sun-b); }
+.vw-sun-fine { display: none; stroke: var(--vw-sky-top); stroke-width: 1; opacity: 0.42; }
+body[data-theme="vapor-neon"] .vw-sun-fine { display: inline; }
+
+.vapor-sun-ghost {
+  opacity: 0;
+  mix-blend-mode: screen;
+  animation: vapor-glitch 24s steps(1, end) 4s infinite;
+}
+
+.vapor-sun-ghost--a { --vw-gx: 1; }
+.vapor-sun-ghost--b { --vw-gx: -1; animation-delay: 4.06s; }
+.vapor-sun-ghost--a .vw-sun-body { fill: var(--vw-glitch-a); }
+.vapor-sun-ghost--b .vw-sun-body { fill: var(--vw-glitch-b); }
+body[data-theme="vapor-pastel"] .vapor-sun-ghost { mix-blend-mode: normal; }
+
+/* mountains (neon) */
+
+.vapor-mtn {
+  bottom: calc(100% - var(--vw-horizon) - 2px);
+  width: min(40vw, 660px);
+  height: min(20vw, 330px);
+  max-height: calc(var(--vw-horizon) * 0.62);
+}
+
+.vapor-mtn--left { left: 0; }
+.vapor-mtn--right { right: 0; }
+
+.vapor-mtn polygon {
+  stroke: var(--vw-grid);
+  stroke-width: 1.1;
+  stroke-linejoin: round;
+  fill: var(--vw-mtn-1);
+}
+
+.vapor-mtn .vw-f2 { fill: var(--vw-mtn-2); }
+.vapor-mtn .vw-f3 { fill: var(--vw-mtn-3); }
+.vapor-mtn .vw-hot { stroke: var(--vw-mtn-hot); }
+
+/* clouds (pastel) */
+
+.vapor-clouds { inset: 0 0 calc(100% - var(--vw-horizon)) 0; }
+.vapor-cloud { position: absolute; }
+.vapor-cloud--1 { left: 5vw; top: 26%; width: min(18vw, 240px); }
+.vapor-cloud--2 { right: 9vw; top: 12%; width: min(13vw, 170px); }
+.vapor-cloud--3 { right: 24vw; top: 58%; width: min(16vw, 210px); }
+.vw-cloud-body { fill: var(--vw-cloud); stroke: var(--vw-moon); stroke-width: 1.2; stroke-opacity: 0.35; }
+
+/* floor */
+
+.vapor-floor {
+  left: 0;
+  right: 0;
+  top: var(--vw-horizon);
+  bottom: 0;
+  overflow: hidden;
+  background: linear-gradient(to bottom, var(--vw-floor-a), var(--vw-floor-b));
+}
+
+.vapor-floor--checker { background: var(--vw-floor-a); }
+
+.vapor-floor-rays,
+.vapor-floor-lines,
+.vapor-floor-checker {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.vapor-floor-rays {
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 34%);
+  mask-image: linear-gradient(to bottom, transparent 0%, #000 34%);
+}
+
+.vapor-floor-rays path {
+  fill: none;
+  stroke: var(--vw-grid);
+  stroke-width: 1.3;
+}
+
+.vapor-floor-lines path {
+  fill: none;
+  stroke: var(--vw-grid);
+}
+
+.vw-checker { fill: var(--vw-floor-b); }
+
+.vapor-floor-move {
+  position: absolute;
+  inset: 0;
+  transform-origin: 50% 0;
+  will-change: transform;
+  animation: vapor-floor var(--vw-cell-time) linear infinite;
+}
+
+.vapor-floor--checker .vapor-floor-move {
+  animation-name: vapor-floor-checker;
+  animation-duration: calc(var(--vw-cell-time) * 2);
+}
+
+.vapor-floor-haze {
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 42%;
+  background: linear-gradient(to bottom, var(--vw-haze) 0%, color-mix(in srgb, var(--vw-haze) 85%, transparent) 16%, color-mix(in srgb, var(--vw-haze) 40%, transparent) 45%, transparent 100%);
+}
+
+.vapor-floor--checker .vapor-floor-haze {
+  height: 46%;
+  background: linear-gradient(to bottom, var(--vw-haze) 0%, color-mix(in srgb, var(--vw-haze) 60%, transparent) 30%, transparent 100%);
+}
+
+.vapor-floor::after {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--vw-glow) 20%, var(--vw-sun-a) 50%, var(--vw-glow) 80%, transparent);
+}
+
+body[data-theme="vapor-neon"] .vapor-floor-rays {
+  animation: vapor-grid-glitch 24s steps(1, end) 4s infinite;
+}
+
+/* chrome blobs (sunset) */
+
+.vapor-blob { animation: vapor-drift 40s ease-in-out infinite alternate; }
+.vapor-blob svg { width: 100%; height: 100%; overflow: visible; }
+
+.vapor-blob--1 {
+  right: 5vw;
+  top: 9vh;
+  width: min(25vw, 330px);
+  height: min(25vw, 330px);
+}
+
+.vapor-blob--2 {
+  left: 3vw;
+  bottom: 6vh;
+  width: min(30vw, 400px);
+  height: min(19.3vw, 257px);
+  animation-duration: 52s;
+  animation-direction: alternate-reverse;
+}
+
+.vw-stop-chrome-1 { stop-color: var(--vw-chrome-1); }
+.vw-stop-chrome-2 { stop-color: var(--vw-chrome-2); }
+.vw-stop-chrome-3 { stop-color: var(--vw-chrome-3); }
+.vw-stop-shade-0 { stop-color: var(--vw-chrome-shade); stop-opacity: 0; }
+.vw-stop-shade-1 { stop-color: var(--vw-chrome-shade); stop-opacity: 0.42; }
+.vw-stop-hi-0 { stop-color: #ffffff; stop-opacity: 0.95; }
+.vw-stop-hi-1 { stop-color: #ffffff; stop-opacity: 0; }
+.vw-blob-spec { fill: #ffffff; opacity: 0.85; }
+
+/* scanlines (neon) */
+
+.vapor-scanlines {
+  inset: 0;
+  display: none;
+  background: repeating-linear-gradient(to bottom, transparent 0 2px, var(--vw-scanline) 2px 3px);
+}
+
+body[data-theme="vapor-neon"] .vapor-scanlines { display: block; }
+
+/* -------------------------------------------------------------- keyframes */
+
+@keyframes vapor-rise {
+  from { transform: translateY(38vh); }
+  to { transform: translateY(0); }
+}
+
+@keyframes vapor-bob {
+  from { transform: translateY(0); }
+  to { transform: translateY(-6px); }
+}
+
+/* 24 s cycle; only the first 2 % (about half a second) does anything. */
+@keyframes vapor-glitch {
+  0% { opacity: 0.95; clip-path: inset(8% 0 74% 0); transform: translateX(calc(var(--vw-gx, 1) * -14px)); }
+  0.3% { clip-path: inset(52% 0 30% 0); transform: translateX(calc(var(--vw-gx, 1) * 18px)); }
+  0.6% { clip-path: inset(30% 0 58% 0); transform: translateX(calc(var(--vw-gx, 1) * -8px)); }
+  0.9% { clip-path: inset(70% 0 12% 0); transform: translateX(calc(var(--vw-gx, 1) * 12px)); }
+  1.2% { clip-path: inset(18% 0 66% 0); transform: translateX(calc(var(--vw-gx, 1) * -20px)); }
+  1.5% { clip-path: inset(44% 0 44% 0); transform: translateX(calc(var(--vw-gx, 1) * 6px)); }
+  1.8% { clip-path: inset(80% 0 4% 0); transform: translateX(calc(var(--vw-gx, 1) * -10px)); }
+  2%, 100% { opacity: 0; clip-path: inset(50% 0 50% 0); transform: none; }
+}
+
+/* Neon grid flicker, fires with the sun glitch (about 0.25 s). */
+@keyframes vapor-grid-glitch {
+  0% { clip-path: inset(0 0 55% 0); transform: translateX(16px); }
+  0.35% { clip-path: inset(40% 0 0 0); transform: translateX(-12px); }
+  0.7% { clip-path: inset(20% 0 35% 0); transform: translateX(8px); }
+  1%, 100% { clip-path: none; transform: none; }
+}
+
+/* One floor row per cycle. Scale steps follow 1.3^(t) so speed is smooth. */
+@keyframes vapor-floor {
+  0% { transform: scale(1); }
+  20% { transform: scale(1.0539); }
+  40% { transform: scale(1.1107); }
+  60% { transform: scale(1.1706); }
+  80% { transform: scale(1.2337); }
+  100% { transform: scale(1.3); }
+}
+
+/* Two rows per cycle so the checker colours line up again. */
+@keyframes vapor-floor-checker {
+  0% { transform: scale(1); }
+  20% { transform: scale(1.1107); }
+  40% { transform: scale(1.2337); }
+  60% { transform: scale(1.3703); }
+  80% { transform: scale(1.5221); }
+  100% { transform: scale(1.69); }
+}
+
+@keyframes vapor-twinkle {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
+}
+
+@keyframes vapor-drift {
+  0% { transform: translate(0, 0) rotate(0deg); }
+  50% { transform: translate(-3vw, 2vh) rotate(4deg); }
+  100% { transform: translate(2vw, -1.5vh) rotate(-3deg); }
+}
+
+@keyframes vapor-cloud-drift {
+  from { transform: translateX(0); }
+  to { transform: translateX(6vw); }
+}
+
+/* full motion only */
+.vapor-star-g1 { animation: vapor-twinkle 4.2s ease-in-out infinite; }
+.vapor-star-g2 { animation: vapor-twinkle 5.6s ease-in-out 1.3s infinite; }
+.vapor-sparkles { animation: vapor-twinkle 7s ease-in-out 2.1s infinite; }
+.vapor-cloud { animation: vapor-cloud-drift 90s ease-in-out infinite alternate; }
+.vapor-cloud--2 { animation-direction: alternate-reverse; }
+
+/* ------------------------------------------------- message arrival glitch */
+
+/* app.js adds .msg-glitch to the new <li> (position: relative already) and
+   removes it after 300 ms. */
+@keyframes msg-glitch {
+  0% { clip-path: inset(0 0 62% 0); transform: translateX(-7px); }
+  20% { clip-path: inset(42% 0 20% 0); transform: translateX(6px); }
+  40% { clip-path: inset(72% 0 0 0); transform: translateX(-3px); }
+  60% { clip-path: inset(10% 0 48% 0); transform: translateX(4px); }
+  80%, 100% { clip-path: inset(0); transform: none; }
+}
+
+@keyframes msg-glitch-split {
+  0% { opacity: 0.9; clip-path: inset(10% 0 60% 0); transform: translateX(5px); }
+  33% { opacity: 0.8; clip-path: inset(55% 0 15% 0); transform: translateX(-6px); }
+  66% { opacity: 0.6; clip-path: inset(30% 0 40% 0); transform: translateX(3px); }
+  100% { opacity: 0; clip-path: inset(50% 0 50% 0); transform: none; }
+}
+
+body[data-theme^="vapor-"] .msg-glitch {
+  animation: msg-glitch 0.3s steps(1, end) both;
+}
+
+body[data-theme^="vapor-"] .msg-glitch::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: 12px;
+  background: linear-gradient(
+    to bottom,
+    transparent 0 22%,
+    var(--vw-glitch-a) 22% 34%,
+    transparent 34% 58%,
+    var(--vw-glitch-b) 58% 70%,
+    transparent 70%
+  );
+  mix-blend-mode: screen;
+  opacity: 0;
+  animation: msg-glitch-split 0.3s steps(1, end) both;
+}
+
+body[data-theme="vapor-pastel"] .msg-glitch::after { mix-blend-mode: multiply; }
+
+/* ------------------------------------------------------------ motion levels */
+
+#vapor[data-motion="calm"] { --vw-cell-time: 14s; }
+
+#vapor[data-motion="calm"] .vapor-star-g,
+#vapor[data-motion="calm"] .vapor-blob,
+#vapor[data-motion="calm"] .vapor-cloud { animation: none; }
+
+#vapor[data-motion="off"] *,
+#vapor[data-motion="off"] *::after { animation: none !important; }
+
+#vapor[data-motion="off"] .vapor-sun-ghost { display: none; }
+
+/* Sun waits below the horizon until the attribute is removed. */
+#vapor[data-vapor-hold] .vapor-sun-rise,
+#vapor[data-vapor-hold] .vapor-sun-rise * { animation-play-state: paused; }
+
+/* Tab hidden: freeze everything. The flag may sit on <html>, <body> or #vapor. */
+[data-vapor-paused] #vapor *,
+#vapor[data-vapor-paused] * { animation-play-state: paused !important; }
+
+@media (prefers-reduced-motion: reduce) {
+  #vapor *,
+  #vapor *::after { animation: none !important; }
+  #vapor .vapor-sun-ghost { display: none; }
+  body[data-theme^="vapor-"] .msg-glitch,
+  body[data-theme^="vapor-"] .msg-glitch::after { animation: none !important; }
+  body[data-theme^="vapor-"] .msg-glitch::after { display: none; }
+}
+
+@media print {
+  #vapor { display: none !important; }
+}
