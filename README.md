@@ -1,8 +1,6 @@
 # The Nook
 
-The Nook is one chat room in the browser. Colleagues join here:
-
-**https://nook.prakritichhetri.workers.dev**
+The Nook is one chat room in the browser. A join link for colleagues is not set yet. The standing Worker is deployed, and this Cloudflare account has no domain to attach. A workers.dev hostname is not the join link.
 
 Nothing to install. At the door, type the room word `pspsps`, a name, and a picture if you want one. That word is the same for everyone until it is changed. It is not written into `data/config.json`. To change it later, set the Worker secret `NOOK_ROOM_WORD` in the Cloudflare dashboard. Leave it unset and the word stays `pspsps`.
 
@@ -32,13 +30,11 @@ To publish a change to the standing link, from this repo:
 npx wrangler deploy
 ```
 
-Colleagues keep the same URL. Open tabs ask for the new page. There is no dist folder to commit.
+Once a join hostname is attached, colleagues keep that same address. Open tabs ask for the new page. There is no dist folder to commit.
 
 ## How a chat-only person joins
 
-Open https://nook.prakritichhetri.workers.dev. Nothing to install.
-
-That is the whole step. They use a normal browser. They never clone the repo.
+A public join link is not ready. Chat-only people use a normal browser and never clone the repo. They need a hostname on a domain this account already has, and this account has none yet.
 
 ## How a coder joins
 
