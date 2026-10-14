@@ -54,6 +54,7 @@ import {
   fireWeapon,
   friendRecord,
   friendStage,
+  gameCursor,
   getMap,
   giftTo,
   goreBits,
@@ -159,7 +160,7 @@ let clock = 0;
 let scale = 3;
 let cam = { x: 0, y: 0 };
 let pollTimer = 0;
-let pollMs = 250;
+let pollMs = 2000;
 let lastGameId = 0;
 let gameSeq = 0;
 let placeTimer = 0;
@@ -189,6 +190,13 @@ const homes = new Map();
 const myShots = [];
 const foeShots = [];
 const matchShots = [];
+const peerShots = [];
+const takenShots = new Set();
+const queued = new Map();
+const pendingPlaces = new Map();
+let liveSocket = null;
+let liveTries = 0;
+let draining = false;
 const aliens = [];
 const particles = [];
 const rings = [];
@@ -477,7 +485,7 @@ async function publish(kind, body) {
     await fetch('/api/game', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-token': token },
-      body: JSON.stringify(parcel),
+      body: JSON.stringify({ ...parcel, kind }),
     });
   } catch { /* the room can miss one parcel */ }
 }
@@ -547,9 +555,26 @@ function applyParcel(payload, row) {
   } else if (kind === 'duel') {
     takeDuel(payload.from, body);
   } else if (kind === 'shot') {
-    if (!mine && match && match.on && body.matchKey === match.id && !matchShots.some((shot) => shot.id === body.id)) matchShots.push(body);
+    if (mine) return;
+    if (body.map && body.map !== mapKey()) return;
+    if (body.matchKey) {
+      if (!(match && match.on && body.matchKey === match.id)) return;
+      if (!matchShots.some((shot) => shot.id === body.id)) matchShots.push(body);
+    } else if (!peerShots.some((shot) => shot.id === body.id)) peerShots.push(body);
   } else if (kind === 'hit' && body.to === me()) {
+    if (mine) return;
+    if (body.map && body.map !== mapKey()) return;
+    if (body.shotId && takenShots.has(body.shotId)) return;
+    if (guardUp()) {
+      const seg = saberSegment(chest(), aim);
+      blockEffect((seg.x0 + seg.x1) / 2, (seg.y0 + seg.y1) / 2);
+      return;
+    }
+    if (body.shotId) takenShots.add(body.shotId);
     if (match && match.on && body.matchKey === match.id) takeMatchHit(payload.from, body.damage || 1);
+    else hurtMe(body.damage || 1);
+  } else if (kind === 'hit' && body.shotId) {
+    dropShot(body.shotId);
   } else if (kind === 'match-open' && !mine) {
     if (!(match && match.on)) match = { invite: body.matchKey, from: payload.from, fromName: body.name, lives: body.lives };
     say(`${body.name} opened a match at the Colosseum.`);
@@ -592,24 +617,116 @@ function applyParcel(payload, row) {
   if (els.pop && !els.pop.hidden && !['place', 'shot', 'emote', 'home'].includes(kind)) paintPanel();
 }
 
+async function acceptParcel(row) {
+  if (!row || !Number.isFinite(row.id)) return 'seen';
+  if (seenGame.has(row.id)) return 'seen';
+  const key = api && api.getGroupKey();
+  if (!key) return 'wait';
+  try {
+    applyParcel(await decryptJson(key, row), row);
+    seenGame.add(row.id);
+    return 'ok';
+  } catch {
+    return 'wait';
+  }
+}
+
+async function retryPlaces() {
+  if (!api || !api.getGroupKey()) return;
+  for (const [id, row] of pendingPlaces) {
+    const result = await acceptParcel(row);
+    if (result !== 'wait') pendingPlaces.delete(id);
+  }
+}
+
+async function drainQueue() {
+  if (draining || !api || !api.getGroupKey()) return;
+  draining = true;
+  try {
+    const attempts = [];
+    while (queued.has(lastGameId + 1 + attempts.length)) {
+      const row = queued.get(lastGameId + 1 + attempts.length);
+      const result = await acceptParcel(row);
+      if (result === 'wait') {
+        attempts.push({ id: row.id, opened: false });
+        break;
+      }
+      attempts.push({ id: row.id, opened: true });
+      queued.delete(row.id);
+    }
+    lastGameId = gameCursor(lastGameId, attempts);
+  } finally {
+    draining = false;
+  }
+}
+
+function holdParcel(row) {
+  if (!row || !Number.isFinite(row.id) || row.id <= lastGameId) return;
+  queued.set(row.id, row);
+}
+
+async function ingestPlaces(rows) {
+  for (const row of rows || []) {
+    if (!row || !row.memberId) continue;
+    pendingPlaces.set(row.memberId, row);
+  }
+  await retryPlaces();
+}
+
+async function ingestParcel(row) {
+  holdParcel(row);
+  await drainQueue();
+}
+
 async function pollGames() {
   const token = api && api.getToken();
-  const key = api && api.getGroupKey();
-  if (!token || !key || !roomOpen()) return;
+  if (!token || !roomOpen()) return;
   try {
     const res = await fetch(`/api/game?since=${lastGameId}`, { headers: { 'x-token': token }, cache: 'no-store' });
     if (!res.ok) return;
     const data = await res.json();
     if (Number.isFinite(data.pollMs) && data.pollMs >= 100) pollMs = data.pollMs;
-    for (const row of data.parcels || []) {
-      if (row.id > lastGameId) lastGameId = row.id;
-      if (seenGame.has(row.id)) continue;
-      seenGame.add(row.id);
-      try {
-        applyParcel(await decryptJson(key, row), row);
-      } catch { /* a parcel for another key */ }
-    }
+    await ingestPlaces(data.places);
+    for (const row of data.parcels || []) holdParcel(row);
+    await drainQueue();
   } catch { /* the room can miss one tick */ }
+}
+
+function liveUrl() {
+  const token = api && api.getToken();
+  if (!token) return '';
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${proto}//${location.host}/api/live?token=${encodeURIComponent(token)}`;
+}
+
+function openLive() {
+  if (liveSocket || !roomOpen()) return;
+  const url = liveUrl();
+  if (!url) return;
+  const ws = new WebSocket(url);
+  liveSocket = ws;
+  ws.onmessage = (event) => {
+    let msg;
+    try { msg = JSON.parse(event.data); } catch { return; }
+    if (msg.type === 'places') void ingestPlaces(msg.places);
+    if (msg.type === 'parcel') void ingestParcel(msg.parcel);
+  };
+  ws.onopen = () => { liveTries = 0; };
+  ws.onclose = () => {
+    if (liveSocket === ws) liveSocket = null;
+    if (!roomOpen()) return;
+    liveTries += 1;
+    setTimeout(openLive, Math.min(5000, 400 * liveTries));
+  };
+}
+
+function closeLive() {
+  const ws = liveSocket;
+  liveSocket = null;
+  if (ws) {
+    ws.onclose = null;
+    try { ws.close(); } catch { /* already gone */ }
+  }
 }
 
 function schedulePoll() {
@@ -640,6 +757,8 @@ function publishPlace(force = false) {
   const sig = JSON.stringify(body);
   if (!force && sig === lastPlaceSig) return;
   lastPlaceSig = sig;
+  heartbeat = 0;
+  sentAt = 0;
   publish('place', body);
 }
 
@@ -667,6 +786,7 @@ function goTo(id, { spawn = null, owner = '' } = {}) {
   aliens.length = 0;
   myShots.length = 0;
   foeShots.length = 0;
+  peerShots.length = 0;
   splats.length = 0;
   closeTalk();
   closeCard();
@@ -810,6 +930,28 @@ function covers() {
   return match && match.on ? ARENA.covers : [];
 }
 
+function dropShot(id) {
+  if (!id) return;
+  for (const list of [myShots, matchShots, peerShots]) {
+    const idx = list.findIndex((shot) => shot.id === id);
+    if (idx >= 0) list.splice(idx, 1);
+  }
+}
+
+function noteHit(hit, matchKey) {
+  if (!hit || hit.id !== me() || (hit.shotId && takenShots.has(hit.shotId))) return;
+  if (hit.shotId) takenShots.add(hit.shotId);
+  if (matchKey) takeMatchHit(hit.from, hit.damage);
+  else hurtMe(hit.damage || 1);
+  publish('hit', {
+    to: me(),
+    damage: hit.damage || 1,
+    shotId: hit.shotId || '',
+    matchKey: matchKey || '',
+    map: mapKey(),
+  });
+}
+
 function pullTrigger(first) {
   const id = weapon();
   if (!id || talk) return;
@@ -829,10 +971,11 @@ function pullTrigger(first) {
     for (const alien of aliens) {
       if (saberStrikes(chest(), aim, { x: alien.x, y: alien.y - 6 })) damageAlien(alien, spec.damage);
     }
-    if (match && match.on) {
-      for (const other of others.values()) {
-        if (other.map !== mapKey() || other.match !== match.id) continue;
-        if (saberStrikes(chest(), aim, { x: other.dx, y: other.dy - 6 })) publish('hit', { to: other.id, damage: 1, matchKey: match.id });
+    for (const other of others.values()) {
+      if (other.map !== mapKey()) continue;
+      if (match && match.on && other.match !== match.id) continue;
+      if (saberStrikes(chest(), aim, { x: other.dx, y: other.dy - 6 })) {
+        publish('hit', { to: other.id, damage: 1, matchKey: match && match.on ? match.id : '', map: mapKey() });
       }
     }
     return;
@@ -841,11 +984,12 @@ function pullTrigger(first) {
   if (!shot) return;
   shot.from = me();
   shot.id = `${me()}-${clock.toFixed(3)}`;
+  shot.map = mapKey();
   if (match && match.on) {
     shot.matchKey = match.id;
     matchShots.push(shot);
-    publish('shot', shot);
   } else myShots.push(shot);
+  publish('shot', shot);
 }
 
 function burst(x, y, colours, n, speed = 60, life = 0.5, size = 1) {
@@ -942,11 +1086,12 @@ function stepCombat(dt) {
           }
         }
       }
-      if (match && match.on && clock > (beam.hitAt || 0)) {
+      if (clock > (beam.hitAt || 0)) {
         for (const other of others.values()) {
-          if (other.map !== mapKey() || other.match !== match.id) continue;
+          if (other.map !== mapKey()) continue;
+          if (match && match.on && other.match !== match.id) continue;
           if (segmentHitsRect(seg, hitBox({ x: other.dx, y: other.dy }), 1)) {
-            publish('hit', { to: other.id, damage: 1, matchKey: match.id });
+            publish('hit', { to: other.id, damage: 1, matchKey: match && match.on ? match.id : '', map: mapKey() });
             beam.hitAt = clock + 0.5;
           }
         }
@@ -988,6 +1133,21 @@ function stepCombat(dt) {
   foeShots.length = 0;
   foeShots.push(...alive);
   for (const hit of theirs.impacts) burst(hit.x, hit.y, ['#7dff6a', '#d9ffd0'], 4, 30, 0.25);
+  stepPeer(dt);
+}
+
+function stepPeer(dt) {
+  const bodies = [{ id: me(), invuln: invuln > 0 ? 1 : 0, rect: hitBox(actor) }];
+  const kept = [];
+  for (const shot of peerShots) {
+    const next = { ...shot, x: shot.x + shot.vx * dt, y: shot.y + shot.vy * dt };
+    if (tryBlock(shot, next)) continue;
+    kept.push(shot);
+  }
+  const resolved = resolveShots(kept, [], bodies, dt);
+  peerShots.length = 0;
+  peerShots.push(...resolved.shots);
+  for (const hit of resolved.hits) noteHit(hit, '');
 }
 
 function impact(shot, x, y, target) {
@@ -1120,7 +1280,7 @@ function stepMatch(dt) {
   const resolved = resolveShots(kept, ARENA.covers, bodies, dt);
   matchShots.length = 0;
   matchShots.push(...resolved.shots);
-  for (const hit of resolved.hits) if (hit.id === me()) takeMatchHit(hit.from, hit.damage);
+  for (const hit of resolved.hits) if (hit.id === me()) noteHit(hit, match.id);
 }
 
 // ---- Effects -------------------------------------------------------------------------------
@@ -1181,7 +1341,7 @@ function stepWorksTick(dt) {
 }
 
 function stepOthers(dt) {
-  const k = 1 - Math.exp(-dt * 12);
+  const k = Math.min(1, dt / 0.1);
   for (const other of others.values()) {
     other.dx += (other.x - other.dx) * k;
     other.dy += (other.y - other.dy) * k;
@@ -1222,15 +1382,39 @@ function step(dt) {
 }
 
 let heartbeat = 0;
+let sentAt = 0;
 
 function netTick(dt) {
-  placeTimer += dt;
+  sentAt += dt;
   heartbeat += dt;
-  if (placeTimer > 0.15) {
-    placeTimer = 0;
-    const due = heartbeat > 1.5;
-    if (due) heartbeat = 0;
-    publishPlace(due);
+  const body = {
+    map: mapKey(),
+    x: Math.round(actor.x),
+    y: Math.round(actor.y),
+    f: actor.facing,
+    m: actor.moving ? 1 : 0,
+    look: save.look,
+    colour: save.colour,
+    name: myName(),
+    gun: weapon(),
+    aim: Math.round(aim * 100) / 100,
+    guard: saber.guardUntil > clock ? 1 : 0,
+    beam: beam.on ? 1 : 0,
+    match: match && match.on ? match.id : '',
+  };
+  const sig = JSON.stringify(body);
+  if (sig !== lastPlaceSig && sentAt >= 0.08) {
+    sentAt = 0;
+    heartbeat = 0;
+    lastPlaceSig = sig;
+    publish('place', body);
+  } else if (sig === lastPlaceSig && heartbeat >= 8) {
+    heartbeat = 0;
+    publish('place', body);
+  }
+  if (queued.size || pendingPlaces.size) {
+    void retryPlaces();
+    void drainQueue();
   }
   homeTimer += dt;
   if (atHome() && homeTimer > 1.5) {
@@ -1304,8 +1488,11 @@ function screenOf(x, y) {
 }
 
 function othersHere() {
-  const now = Date.now();
-  return [...others.values()].filter((o) => o.map === mapKey() && now - o.at < 5000);
+  const ids = new Set(people().map((person) => person.id));
+  if (ids.size) {
+    for (const id of [...others.keys()]) if (!ids.has(id)) others.delete(id);
+  }
+  return [...others.values()].filter((o) => o.map === mapKey() && (!ids.size || ids.has(o.id)));
 }
 
 function draw(open) {
@@ -1399,6 +1586,7 @@ function drawMe() {
 function drawEffects(ctx) {
   for (const shot of myShots) drawShot(ctx, shot, clock);
   for (const shot of foeShots) drawShot(ctx, shot, clock);
+  for (const shot of peerShots) drawShot(ctx, shot, clock);
   for (const shot of matchShots) drawShot(ctx, shot, clock);
   if (weapon() === 'beam' && beam.firing && beam.seg) drawBeam(ctx, beam.seg, clock);
   for (const o of othersHere()) {
@@ -2459,6 +2647,7 @@ export async function mountColosseum(hooks) {
   paintBar();
   paintHud();
   schedulePoll();
+  openLive();
   postcard();
   publishPlace(true);
 }
@@ -2466,6 +2655,11 @@ export async function mountColosseum(hooks) {
 export function settleColosseum() {
   if (!mounted) return;
   clearTimeout(pollTimer);
+  closeLive();
+  queued.clear();
+  pendingPlaces.clear();
+  takenShots.clear();
+  peerShots.length = 0;
   const back = releaseEscrow(save.coins, save.escrow);
   save = releaseOffers(sanitiseSave({ ...save, coins: back.coins, escrow: back.escrow }));
   if (mapId === 'home') {

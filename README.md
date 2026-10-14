@@ -1,20 +1,22 @@
 # The Nook
 
-The Nook is one chat room in the browser. It exists only on the laptop that starts it, and only while that script is still open. Close the script and the room is gone.
+The Nook is one chat room in the browser. Colleagues join here:
 
-Messages are not saved. They stay in memory as locked parcels so the people in the room can read them while it is open. **Copy chat** and **Save to note** are the only ways a transcript leaves, and only because that person asked.
+**https://nook.prakritichhetri.workers.dev**
 
-Colleagues who only chat do not install git, Node, or this app. They open a URL.
+Nothing to install. At the door, type the room word `pspsps`, a name, and a picture if you want one. That word is the same for everyone until it is changed. It is not written into `data/config.json`. To change it later, set the Worker secret `NOOK_ROOM_WORD` in the Cloudflare dashboard. Leave it unset and the word stays `pspsps`.
+
+The room stays up when the laptop is shut. Chat is still not a saved archive. It lives with the room, so a quiet hour does not wipe it. A normal code deploy does not clear it either. Deleting that room’s storage does. **Copy chat** and **Save to note** are the only ways a transcript leaves, and only because that person asked.
+
+Click a picture in the chat and it opens larger inside the chat window. The town stays on the page behind it. Close the picture with the close control, the dark area around it, or Escape.
 
 ## Who does what
 
-**Host.** Prakriti, or whoever is running the room, double-clicks the start script on their laptop. The script opens the room in their browser and prints a link. On that page they set a code word for this opening. It is not saved. They can copy it from the room and send it wherever they like. Closing the terminal, or Ctrl+C, stops the chat for everyone, and the code word goes with it.
+**Chat-only person.** Open the standing link. Type `pspsps`, what to call you, and a picture if you like.
 
-**Chat-only person.** Open the link in a browser. Nothing to install. If the host is still choosing a code word, the page asks you to wait. Then type that word at the door, and what to call you.
+**Coder.** Prakriti adds you as a collaborator on this private GitHub repo when you should edit the code. Then clone it, install Node 24, and run the start script. You do not need to be a collaborator just to chat. The start script is for working on the code on your laptop. It is not how colleagues get in.
 
-**Coder.** Prakriti adds you as a collaborator on this private GitHub repo when you should edit the code. Then clone it, install Node 24, and run the start script. You do not need to be a collaborator just to chat.
-
-## How to run it
+## How to work on the code
 
 Needs Node 24. No install step and no build step.
 
@@ -22,21 +24,19 @@ On a Mac, double-click `start-nook.command`.
 
 On Windows, double-click `start-nook.bat`.
 
-Both run `scripts/start.mjs`. The script opens the room in the default browser. The host sets a code word on that page. It is not saved. Everyone else types it at the door.
+Both run `scripts/start.mjs`. The script opens a local room in the default browser, on `127.0.0.1` only. The door word is the same `pspsps`, unless `NOOK_ROOM_WORD` is set in the environment. Closing that window stops only the local room.
 
-The room listens on `127.0.0.1` only. Other people cannot reach that address. For a link you can send, install Cloudflare’s tunnel tool and start the room again:
+To publish a change to the standing link, from this repo:
 
 ```
-brew install cloudflared
+npx wrangler deploy
 ```
 
-If `cloudflared` is installed, the script runs `cloudflared tunnel --url http://127.0.0.1:PORT` and prints the public `trycloudflare.com` link. No Cloudflare account is required. There is no email list and no `--allowed-mail` gate. The host’s page shows that link beside the code word, with its own Copy button. Anyone with the link can open the room. The script does not open a mail draft. The code word is not part of the link.
-
-The host sets a code word each time they start the room. It is held only in memory while the script is open, and it is not written to `data/config.json`. The script does not ask for colleague email addresses. An old `data/config.json` that still has addresses or a mailbox password is ignored for entry. Those addresses are not a guest list.
+Colleagues keep the same URL. Open tabs ask for the new page. There is no dist folder to commit.
 
 ## How a chat-only person joins
 
-Open this link. Nothing to install.
+Open https://nook.prakritichhetri.workers.dev. Nothing to install.
 
 That is the whole step. They use a normal browser. They never clone the repo.
 
@@ -53,7 +53,7 @@ Do not commit `data/`, secrets, or room words. See below.
 
 | Path | What it is |
 | --- | --- |
-| `server.mjs` | The room. HTTP on `127.0.0.1`. Holds the live locked parcels in memory. No message database. |
+| `room.mjs` | The room behaviour. Messages, who is here, locked files, and the latest place for each person. Used by the laptop and by the Worker. |
 | `public/index.html`, `public/app.js`, `public/app.css` | The page: door, the chat window, composer, Settings. |
 | `public/vapor.js` | On the codeword screen, a Vapor theme covers the page with the scene and hides the game. Once the room is open, that full-page scene comes down so the game is the background. Chat scene mounts `#vapor-chat` as the first thing inside the chat window. |
 | `public/vapor-art.js` | The sun, mountains, clouds, floor and chrome blobs, drawn in code. `panelSceneMarkup` is the smaller scene for the chat window (no blobs). Vapor themes only. |
@@ -66,13 +66,16 @@ Do not commit `data/`, secrets, or room words. See below.
 | `public/colosseum-world.mjs` | The maps: Lantern Moon town, the tavern, market, Mallow's house, observatory, old cinema, home station, and Velvet Reach. |
 | `public/colosseum-story.mjs` | Every NPC line. Edit freely; only the text matters to the game. |
 | `public/colosseum-art.js`, `public/colosseum.css` | Original pixel art drawn in code, and the game's HUD styles. |
-| `test/colosseum.test.mjs` | `node --test test/colosseum.test.mjs`. |
+| `server.mjs` | The local room for coding. HTTP and a WebSocket on `127.0.0.1`. Calls `room.mjs`. |
 | `public/paperclip.png` | The attach-button picture. Original file, background removed. |
 | `stickers/` | Sticker art that ships with the app. Not anyone’s conversation. |
-| `scripts/start.mjs` | Starts the server, opens the browser, and the public link when `cloudflared` exists. |
+| `worker.mjs`, `wrangler.jsonc` | The standing Worker. Static files are assets. One Durable Object holds the live room. |
 | `start-nook.command` | Mac double-click. |
 | `start-nook.bat` | Windows double-click. |
-| `data/` | Optional local config on the host laptop (`data/config.json` may hold a host name). Git-ignored. Not messages. |
+| `scripts/start.mjs` | Starts the local room and opens the browser. For coding. |
+| `live-socket.mjs` | The WebSocket frames for the local room. |
+| `test/colosseum.test.mjs`, `test/room.test.mjs` | `node --test`. |
+| `data/` | Optional local config on the coding laptop (`data/config.json` may hold a host name). Git-ignored. Not messages. |
 
 ## Themes
 
@@ -94,7 +97,7 @@ Velvet Reach, the second planet, stays locked until you have three things. You n
 
 Pixel bits when an alien pops are off by default. Settings has a gauge from None to Messy. It is a game effect only and never goes into the chat.
 
-Game progress, the picture and the window layout stay in this browser. Nothing from the game is written on the host, and no chat is ever saved.
+Game progress, the picture and the window layout stay in this browser. A picture in the chat opens larger inside that chat window. Other people’s cats move when they move, and a shot on the street can hit them. Aliens stay on your own screen.
 
 ## Encryption
 
@@ -102,10 +105,10 @@ Each browser makes an ECDH P-256 key pair in memory when someone comes in. The p
 
 Text, sticker choice, and file bytes are encrypted in the browser before they are sent. The server stores ciphertext, public keys, and wrapped room keys. It does not store file names. A note that is posted twice is rejected. A note whose locked contents name a different sender is dropped.
 
-Limits that stay, because this laptop serves the page:
+Limits that stay:
 
-- That laptop supplies the page, so only start it from the script you trust.
-- The host and Cloudflare can see who is here and roughly how big a message is, not the words.
+- The standing page is served by the Worker. For local coding, only start the script you trust.
+- Cloudflare can see who is here and roughly how big a message is, not the words.
 - People should compare the fingerprint on screen.
 
 This is not a Signal-style protocol. There is no separate identity key and no double ratchet.

@@ -1,4 +1,4 @@
-// Quick Tunnels do not support server-sent events, so the room polls.
+// The room polls for notes. Places and shots also arrive on a WebSocket.
 import {
   b64ToBytes,
   bytesToB64,
@@ -46,15 +46,10 @@ const wordLabel = document.querySelector('#word-label');
 const wordLabelText = document.querySelector('#word-label-text');
 const wordInput = document.querySelector('#room-word');
 const comeIn = document.querySelector('#come-in');
-const waiting = document.querySelector('#waiting');
 const doorError = document.querySelector('#door-error');
-const codeLine = document.querySelector('#code-line');
-const codeWord = document.querySelector('#code-word');
-const copyCode = document.querySelector('#copy-code');
-const linkLine = document.querySelector('#link-line');
-const publicLinkEl = document.querySelector('#public-link');
-const copyLink = document.querySelector('#copy-link');
 const room = document.querySelector('#room');
+const picView = document.querySelector('#pic-view');
+const picViewImg = document.querySelector('#pic-view-img');
 const messages = document.querySelector('#messages');
 const olderPage = document.querySelector('#older-page');
 const newerPage = document.querySelector('#newer-page');
@@ -102,11 +97,6 @@ const PALETTE = [
   ['#f6d4e4', '#6a3050'],
 ];
 
-let hostToken = '';
-let hostCode = '';
-let publicLink = '';
-let linkTimer = 0;
-let doorMode = 'door';
 let doorTimer = 0;
 let token = '';
 let memberId = '';
@@ -153,26 +143,15 @@ const feed = [];
 let viewPage = 0;
 let following = true;
 
-function takeHostToken() {
-  const hash = location.hash.startsWith('#') ? location.hash.slice(1) : '';
-  const fromHash = hash.startsWith('h=') ? hash.slice(2) : '';
+function clearHostHash() {
   const params = new URLSearchParams(location.search);
-  const fromQuery = params.get('h') || '';
-  let tokenValue = '';
-  try {
-    tokenValue = decodeURIComponent(fromHash || fromQuery).trim();
-  } catch {
-    tokenValue = '';
-  }
-  if (location.hash || fromQuery) {
-    params.delete('h');
-    const search = params.toString();
-    history.replaceState(null, '', `${location.pathname}${search ? `?${search}` : ''}`);
-  }
-  hostToken = tokenValue;
+  if (!location.hash && !params.get('h')) return;
+  params.delete('h');
+  const search = params.toString();
+  history.replaceState(null, '', `${location.pathname}${search ? `?${search}` : ''}`);
 }
 
-takeHostToken();
+clearHostHash();
 
 function colourFor(name) {
   let hash = 0;
@@ -870,12 +849,18 @@ function renderMessage(message, glitch = false) {
   }
   if (message.gif) appendMotion(bubble, message.gif);
   if (message.attachment) {
-    if (message.attachment.inline) {
+    if (message.attachment.inline && message.attachment.url) {
+      const open = document.createElement('button');
+      open.type = 'button';
+      open.className = 'pic-open';
+      open.setAttribute('aria-label', `View ${message.attachment.name}`);
       const img = document.createElement('img');
       img.className = 'pic';
       img.alt = message.attachment.name;
       img.src = message.attachment.url;
-      bubble.append(img);
+      open.append(img);
+      open.addEventListener('click', () => openPicture(message.attachment.url, message.attachment.name));
+      bubble.append(open);
     } else {
       const link = document.createElement('a');
       link.className = 'file-link';
@@ -956,43 +941,18 @@ function paintTyping(names) {
   else typingLine.textContent = 'Several people are typing…';
 }
 
-function stopLinkWatch() {
-  if (!linkTimer) return;
-  clearTimeout(linkTimer);
-  linkTimer = 0;
+function openPicture(url, name) {
+  if (!url || !picView || !picViewImg) return;
+  picViewImg.src = url;
+  picViewImg.alt = name || 'Picture';
+  picView.hidden = false;
 }
 
-async function watchPublicLink() {
-  stopLinkWatch();
-  try {
-    const res = await fetch('/api/public-link');
-    const data = await res.json();
-    if (data.url) {
-      publicLink = data.url;
-      publicLinkEl.textContent = data.url;
-      copyLink.hidden = false;
-      return;
-    }
-    copyLink.hidden = true;
-    publicLink = '';
-    publicLinkEl.textContent = data.failed
-      ? 'There is no public link yet.'
-      : 'The public link is on its way.';
-  } catch {
-    publicLinkEl.textContent = 'The public link is on its way.';
-  }
-  linkTimer = setTimeout(watchPublicLink, POLL_MS);
-}
-
-function showHostCode(word) {
-  hostCode = word;
-  codeWord.textContent = word;
-  copyCode.textContent = 'Copy';
-  codeLine.hidden = false;
-  linkLine.hidden = false;
-  publicLinkEl.textContent = 'The public link is on its way.';
-  copyLink.hidden = true;
-  watchPublicLink();
+function closePicture() {
+  if (!picView || picView.hidden) return;
+  picView.hidden = true;
+  picViewImg.removeAttribute('src');
+  picViewImg.alt = '';
 }
 
 function colosseumHooks() {
@@ -1022,13 +982,7 @@ function showRoom() {
 
 function backToDoor(message) {
   settleColosseum();
-  stopLinkWatch();
-  hostCode = '';
-  publicLink = '';
-  codeWord.textContent = '';
-  codeLine.hidden = true;
-  linkLine.hidden = true;
-  copyLink.hidden = true;
+  closePicture();
   token = '';
   memberId = '';
   identity = null;
@@ -1178,27 +1132,7 @@ function withTimeout(promise, ms) {
   });
 }
 
-function showWaiting() {
-  doorMode = 'wait';
-  waiting.hidden = false;
-  doorForm.hidden = true;
-  wordInput.required = false;
-}
-
-function showHostSetter() {
-  doorMode = 'host';
-  waiting.hidden = true;
-  doorForm.hidden = false;
-  wordLabel.hidden = false;
-  wordLabelText.textContent = 'Set a code word for this room';
-  wordInput.required = true;
-  wordInput.placeholder = '';
-  comeIn.textContent = 'Set the code and come in';
-}
-
 function showGuestDoor() {
-  doorMode = 'door';
-  waiting.hidden = true;
   doorForm.hidden = false;
   wordLabel.hidden = false;
   wordLabelText.textContent = 'Room word';
@@ -1774,25 +1708,17 @@ doorForm.addEventListener('submit', async (event) => {
   askNotify();
   doorError.textContent = '';
   let res;
-  let chosen = '';
   let body = {};
-  const setting = doorMode === 'host' && hostToken;
   try {
     identity = await createIdentity();
-    chosen = wordInput.value.trim();
     body = {
       name: nameInput.value,
       publicKey: identity.publicKey,
+      roomWord: wordInput.value.trim(),
     };
     if (chosenPhoto) body.photo = await blobToB64(chosenPhoto);
     else if (chosenCat) body.cat = chosenCat;
-    if (setting) {
-      body.hostToken = hostToken;
-      body.word = chosen;
-    } else {
-      body.roomWord = chosen;
-    }
-    res = await fetch(setting ? '/api/host-code' : '/api/join', {
+    res = await fetch('/api/join', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -1817,8 +1743,6 @@ doorForm.addEventListener('submit', async (event) => {
   if (chosenPhoto) photoUrl(memberId, body.photo);
   else if (chosenCat) rememberedCats.set(memberId, chosenCat);
   saveEntry(myName, chosenPhoto ? 'photo' : chosenCat);
-  if (doorMode === 'host' && chosen) showHostCode(chosen);
-  hostToken = '';
   wordInput.value = '';
   showLock('');
   showRoom();
@@ -1960,25 +1884,14 @@ newerPage.addEventListener('click', () => {
   paintPage({ reset: true });
 });
 
-copyCode.addEventListener('click', async () => {
-  if (!hostCode) return;
-  try {
-    await navigator.clipboard.writeText(hostCode);
-    copyCode.textContent = 'Copied';
-  } catch {
-    copyCode.textContent = 'Copy';
-  }
-});
-
-copyLink.addEventListener('click', async () => {
-  if (!publicLink) return;
-  try {
-    await navigator.clipboard.writeText(publicLink);
-    copyLink.textContent = 'Copied';
-  } catch {
-    copyLink.textContent = 'Copy';
-  }
-});
+document.querySelector('#pic-view-back').addEventListener('click', closePicture);
+document.querySelector('#pic-view-close').addEventListener('click', closePicture);
+document.addEventListener('keydown', (event) => {
+  if (event.key !== 'Escape' || !picView || picView.hidden) return;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  closePicture();
+}, true);
 
 document.querySelector('#copy-chat').addEventListener('click', () => { copyChat(); });
 document.querySelector('#save-note').addEventListener('click', () => { saveNote(); });
@@ -2492,18 +2405,16 @@ async function boot() {
     return;
   }
   if (token && !room.hidden) return;
-  if (meta.waiting && hostToken) showHostSetter();
-  else if (meta.waiting) {
-    showWaiting();
-    doorTimer = setTimeout(boot, POLL_MS);
-  } else showGuestDoor();
+  if (meta.waiting) {
+    doorError.textContent = 'The room is not open.';
+  }
+  showGuestDoor();
   if (token && !room.hidden) return;
   room.hidden = true;
   door.hidden = false;
 }
 
-if (hostToken) showHostSetter();
-else showGuestDoor();
+showGuestDoor();
 
 prepareEntry();
 

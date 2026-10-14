@@ -1,4 +1,4 @@
-// Starts The Nook on this laptop and, when cloudflared is installed, a public link.
+// Starts The Nook on this laptop for coding. Colleagues use the standing link.
 import { spawn, spawnSync, execFileSync } from 'node:child_process';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -238,7 +238,7 @@ function watchServer(child) {
   });
 }
 
-async function bootServer(hostToken, linkToken) {
+async function bootServer() {
   const previous = children.filter((child) => child.kind === 'server' && child.exitCode === null);
   for (const child of previous) {
     child.replacing = true;
@@ -252,9 +252,6 @@ async function bootServer(hostToken, linkToken) {
         ...process.env,
         NOOK_PORT: String(port),
         NOOK_DATA: dataDir,
-        NOOK_HOST_TOKEN: hostToken,
-        NOOK_LINK_TOKEN: linkToken,
-        NOOK_ROOM_WORD: '',
         NOOK_QUIET: '1',
       },
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -324,65 +321,18 @@ async function main() {
   try { fs.chmodSync(dataDir, 0o700); } catch { /* best effort */ }
   sweepStale('server');
   sweepStale('tunnel');
-  const config = await loadConfig();
-  const name = hostLabel(config);
+  await loadConfig();
   port = await choosePort();
-  cloudflaredBin = findCloudflared();
-  const hostToken = crypto.randomBytes(24).toString('hex');
-  const linkToken = crypto.randomBytes(24).toString('hex');
-  await bootServer(hostToken, linkToken);
+  await bootServer();
 
   announced = true;
   console.log('');
-  console.log('The Nook is open.');
-  console.log(`${name} opened this room. You are the one who closes it.`);
-  console.log('Close this window, or press Ctrl+C, and the room stops for everyone.');
+  console.log('The Nook is open on this laptop for coding.');
+  console.log('Colleagues join the standing link. This window is not how they get in.');
+  console.log('Close this window, or press Ctrl+C, when you are done.');
   console.log('');
   console.log(`Local link: http://127.0.0.1:${port}`);
-
-  let publicUrl = '';
-
-  openRoomInBrowser(localRoomUrl(port, hostToken));
-
-  async function publishLink(url, failed = false) {
-    try {
-      await fetch(`http://127.0.0.1:${port}/api/public-link`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token: linkToken, url, failed }),
-      });
-    } catch {
-      // The page keeps saying the link is on its way.
-    }
-  }
-
-  if (!cloudflaredBin) {
-    console.log('');
-    console.log('cloudflared is not installed, so there is no public link yet.');
-    console.log('Install it with: brew install cloudflared');
-    console.log('The room is open on this laptop.');
-    await publishLink('', true);
-  } else {
-    console.log('');
-    console.log('Opening a public link…');
-    const result = await openTunnel();
-    if (result.url) {
-      publicUrl = result.url;
-      await publishLink(publicUrl);
-    } else {
-      console.log('Could not open a public link. The room is still open on this laptop.');
-      await publishLink('', true);
-    }
-  }
-
-  if (publicUrl) {
-    console.log(`Public link: ${publicUrl}`);
-    console.log('Anyone with this link can open the room in a browser. Nothing to install.');
-  }
-
-  const shareUrl = publicUrl || `http://127.0.0.1:${port}`;
-  console.log(`Link: ${shareUrl}`);
-  console.log('Tell a colleague: Open this link. Nothing to install.');
+  openRoomInBrowser(localRoomUrl(port));
   await new Promise(() => {});
 }
 

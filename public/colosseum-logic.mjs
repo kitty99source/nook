@@ -1085,6 +1085,22 @@ export function applyHit(lives, damage = 1) {
   return Math.max(0, whole(lives) - Math.max(1, whole(damage) || 1));
 }
 
+// Do not skip a parcel that did not open. The next id stays put until it does.
+export function gameCursor(lastId, rows) {
+  let cursor = Number(lastId) || 0;
+  if (!Number.isFinite(cursor) || cursor < 0) cursor = 0;
+  const opened = new Map();
+  for (const row of rows || []) {
+    if (!row || !Number.isFinite(Number(row.id))) continue;
+    opened.set(Number(row.id), row.opened === true);
+  }
+  while (opened.has(cursor + 1)) {
+    if (!opened.get(cursor + 1)) break;
+    cursor += 1;
+  }
+  return cursor;
+}
+
 export function hitBox(actor) {
   return { x: actor.x - 6, y: actor.y - 14, w: 12, h: 14 };
 }

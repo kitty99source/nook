@@ -18,7 +18,6 @@
     <div class="door-card">
     <img class="door-mark" src="/stickers/lilac-moth.svg" alt="">
     <p class="eyebrow">The Nook</p>
-    <p id="waiting" class="waiting" hidden>The host is choosing a code word. Wait here.</p>
     <form id="door-form">
       <h1><label for="name">What should we call you?</label></h1>
       <label id="word-label" for="room-word">
@@ -61,14 +60,6 @@
     </div>
     <div class="room-info">
       <p id="fingerprint" class="fingerprint">The room locks in the browser.</p>
-      <p id="code-line" class="code-line" hidden>
-        <span id="code-word"></span>
-        <button type="button" id="copy-code" aria-label="Copy code word">Copy</button>
-      </p>
-      <p id="link-line" class="code-line" hidden>
-        <span id="public-link">The public link is on its way.</span>
-        <button type="button" id="copy-link" aria-label="Copy public link" hidden>Copy</button>
-      </p>
     </div>
     <div class="talk">
         <div class="pages">
@@ -117,6 +108,13 @@
       </div>
       <div id="drop" class="drop" hidden>Drop it in the nook</div>
       <div id="live" class="sr" aria-live="polite"></div>
+      <div id="pic-view" class="pic-view" hidden>
+        <button type="button" id="pic-view-back" class="pic-view-back" aria-label="Close picture"></button>
+        <div class="pic-view-frame">
+          <img id="pic-view-img" alt="">
+          <button type="button" id="pic-view-close" aria-label="Close picture">Close</button>
+        </div>
+      </div>
   </section>
 
   <section id="settings-panel" class="settings-panel" hidden aria-label="Settings">

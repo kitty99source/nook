@@ -2,12 +2,12 @@
   "name": "the-nook",
   "private": true,
   "type": "module",
-  "description": "A one-room chat that runs only while the host keeps it open.",
+  "description": "A one-room chat on a standing link, with the town behind it.",
   "engines": {
     "node": ">=24"
   },
   "scripts": {
     "start": "node scripts/start.mjs",
-    "test": "node --test test/colosseum.test.mjs"
+    "test": "node --test"
   }
 }
