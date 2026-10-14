@@ -132,7 +132,9 @@ export function initVapor() {
 
   function sync() {
     const theme = document.body.dataset.theme || '';
-    if (!theme.startsWith('vapor-')) {
+    // The full-page scene covers the codeword screen only. Once the room is
+    // showing, take #vapor away so it cannot sit on the game.
+    if (!theme.startsWith('vapor-') || passedDoor()) {
       drop();
       syncChat();
       return;
@@ -175,7 +177,7 @@ export function initVapor() {
 
   const room = document.querySelector('#room');
   if (room) {
-    new MutationObserver(() => holdSun()).observe(room, {
+    new MutationObserver(sync).observe(room, {
       attributes: true,
       attributeFilter: ['hidden'],
     });

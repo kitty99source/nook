@@ -55,7 +55,7 @@ Do not commit `data/`, secrets, or room words. See below.
 | --- | --- |
 | `server.mjs` | The room. HTTP on `127.0.0.1`. Holds the live locked parcels in memory. No message database. |
 | `public/index.html`, `public/app.js`, `public/app.css` | The page: door, the chat window, composer, Settings. |
-| `public/vapor.js` | Puts the vaporwave scene behind the windows when a Vapor theme is on, and takes it away for the other themes. On those themes, Chat scene also mounts `#vapor-chat` as the first thing inside the chat window. |
+| `public/vapor.js` | On the codeword screen, a Vapor theme covers the page with the scene and hides the game. Once the room is open, that full-page scene comes down so the game is the background. Chat scene mounts `#vapor-chat` as the first thing inside the chat window. |
 | `public/vapor-art.js` | The sun, mountains, clouds, floor and chrome blobs, drawn in code. `panelSceneMarkup` is the smaller scene for the chat window (no blobs). Vapor themes only. |
 | `public/vapor.css` | How that scene sits on the page and how it moves. |
 | `public/popup.js` | Square windows over the world: drag by the bar, resize from the corner, minimise to the tray. Remembers only window layout in this browser. |
@@ -76,7 +76,7 @@ Do not commit `data/`, secrets, or room words. See below.
 
 ## Themes
 
-Settings lists Paper, Dark, Cyberpunk, Akira Red, Vapor pastel, Vapor sunset, and Vapor neon. A Vapor theme puts a sun and a floor behind the windows. The sun stays below the horizon until you come in, then it climbs. A new message flickers for a moment. The windows pick up a hard title bar. If the computer asks for less motion, the scene stays still. The choice stays in this browser.
+Settings lists Paper, Dark, Cyberpunk, Akira Red, Vapor pastel, Vapor sunset, and Vapor neon. A Vapor theme covers the codeword screen with a sun and a floor, and the game stays hidden there. Once you are in the room, the game fills the page. The sun stays below the horizon until you come in, then it climbs inside the chat. A new message flickers for a moment. The windows pick up a hard title bar. If the computer asks for less motion, the scene stays still. The choice stays in this browser.
 
 On a Vapor theme, Settings also shows Chat scene and Window style. Both start on, and each can be switched off. Chat scene draws that sun and floor inside the chat window. Window style is Current look or Retro 90s. Retro 90s is grey windows, a blue title bar, and square buttons. The writing stays dark on the light window so it can be read. These choices stay in this browser too. Other themes hide both controls.
 

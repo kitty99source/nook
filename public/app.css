@@ -1480,10 +1480,15 @@ body[data-theme="vapor-neon"] {
   --vw-title-ink: #fff8ff;
 }
 
-/* The town canvas paints an opaque sky. On a vapor theme it sits over the
-   scene, so it fades enough for the sun and floor to stay visible. */
-body[data-theme^="vapor-"] .world {
-  opacity: 0.32;
+/* Full-page vapor covers the codeword screen. The town canvas stays hidden
+   there, so the game and the scene never show together. Once the room is
+   open, #vapor cannot cover the game. */
+body[data-theme^="vapor-"]:has(#room[hidden]) #world {
+  visibility: hidden;
+}
+
+body[data-theme^="vapor-"]:not(:has(#room[hidden])) #vapor {
+  display: none !important;
 }
 
 body[data-theme^="vapor-"] .door input {
