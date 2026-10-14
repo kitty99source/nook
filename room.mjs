@@ -82,7 +82,182 @@ function cleanMap(value) {
 function cleanMatch(value) {
   const match = String(value || '');
   if (!match) return '';
-  return /^[a-zA-Z0-9:_-]{1,48}$/.test(match) ? match : '';
+  return /^[a-zA-Z0-9:_-]{1,64}$/.test(match) ? match : '';
+}
+
+function cleanToken(value, max = 80) {
+  const text = String(value ?? '');
+  if (!text || text.length > max || !/^[A-Za-z0-9:_./-]{1,80}$/.test(text)) return '';
+  return text;
+}
+
+function cleanMember(value) {
+  const text = String(value || '');
+  return /^[a-f0-9]{8,32}$/.test(text) ? text : '';
+}
+
+function cleanLabel(value, max = 40) {
+  const text = String(value || '').replace(/\s+/g, ' ').trim();
+  if (!text || text.length > max || /[\u0000-\u001f]/.test(text)) return '';
+  return text;
+}
+
+function cleanInt(value, min, max) {
+  const n = Math.round(Number(value));
+  if (!Number.isFinite(n) || n < min || n > max) return null;
+  return n;
+}
+
+const PLAY_KINDS = new Set([
+  'ready', 'duel', 'match-open', 'match-cancel', 'match-end',
+  'gift', 'gift-accept', 'gift-decline', 'send',
+  'trade', 'trade-accept', 'trade-decline',
+  'emote', 'postcard', 'home', 'drink',
+]);
+
+function cleanWorks(value) {
+  const out = {};
+  if (!value || typeof value !== 'object') return out;
+  for (const id of ['mine', 'studio', 'vat']) {
+    const row = value[id];
+    if (!row || typeof row !== 'object') continue;
+    const progress = Number(row.progress);
+    out[id] = {
+      progress: Number.isFinite(progress) ? Math.max(0, Math.min(100000, progress)) : 0,
+      loaded: row.loaded === true,
+    };
+  }
+  return out;
+}
+
+function cleanFurniture(value) {
+  const out = [];
+  if (!Array.isArray(value)) return out;
+  for (const item of value) {
+    if (!item || typeof item !== 'object') continue;
+    const id = cleanToken(item.id, 32);
+    const x = cleanInt(item.x, -400, 6000);
+    const y = cleanInt(item.y, -400, 6000);
+    if (!id || x == null || y == null) continue;
+    out.push({ id, x, y });
+    if (out.length >= 12) break;
+  }
+  return out;
+}
+
+function cleanPlay(body, session, at) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return null;
+  const kind = cleanKind(body.kind);
+  if (!PLAY_KINDS.has(kind)) return null;
+  const seq = Number(body.seq);
+  const play = {
+    kind,
+    from: session.memberId,
+    name: session.name,
+    seq: Number.isInteger(seq) && seq > 0 && seq < 1e15 ? seq : at,
+  };
+  const to = cleanMember(body.to);
+  if (to) play.to = to;
+  if (kind === 'ready') {
+    play.at = at;
+    return play;
+  }
+  if (kind === 'duel') {
+    const phase = String(body.phase || '');
+    if (!['invite', 'accept', 'cancel', 'score'].includes(phase)) return null;
+    const round = cleanToken(body.round, 80);
+    if (!round) return null;
+    play.phase = phase;
+    play.round = round;
+    if (phase === 'accept') {
+      const startAt = Number(body.startAt);
+      if (!Number.isFinite(startAt)) return null;
+      play.startAt = Math.round(startAt);
+    }
+    if (phase === 'score') {
+      const score = cleanInt(body.score, 0, 999);
+      if (score == null) return null;
+      play.score = score;
+    }
+    return play;
+  }
+  if (kind === 'match-open' || kind === 'match-cancel' || kind === 'match-end') {
+    const matchKey = cleanMatch(body.matchKey);
+    if (!matchKey) return null;
+    play.matchKey = matchKey;
+    if (kind === 'match-open') {
+      const lives = cleanInt(body.lives, 1, 3);
+      play.lives = lives === 1 ? 1 : 3;
+    }
+    if (kind === 'match-end') {
+      const winnerId = cleanMember(body.winnerId);
+      if (winnerId) play.winnerId = winnerId;
+      const winnerName = cleanLabel(body.winnerName);
+      const loserName = cleanLabel(body.loserName);
+      if (winnerName) play.winnerName = winnerName;
+      if (loserName) play.loserName = loserName;
+    }
+    return play;
+  }
+  if (kind === 'gift' || kind === 'send') {
+    const amount = cleanInt(body.amount, 1, 1000000);
+    if (amount == null || !to) return null;
+    play.amount = amount;
+    if (kind === 'gift') {
+      const id = cleanToken(body.id, 80);
+      if (!id) return null;
+      play.id = id;
+    }
+    return play;
+  }
+  if (kind === 'gift-accept' || kind === 'gift-decline' || kind === 'trade-accept' || kind === 'trade-decline') {
+    const id = cleanToken(body.id, 80);
+    if (!id || !to) return null;
+    play.id = id;
+    return play;
+  }
+  if (kind === 'trade') {
+    const id = cleanToken(body.id, 80);
+    const item = cleanToken(body.item, 32);
+    const count = cleanInt(body.count, 1, 99);
+    if (!id || !item || count == null || !to) return null;
+    play.id = id;
+    play.item = item;
+    play.count = count;
+    return play;
+  }
+  if (kind === 'emote') {
+    const icon = String(body.icon || '');
+    if (!icon || icon.length > 8 || /[\u0000-\u001f]/.test(icon)) return null;
+    play.icon = icon;
+    return play;
+  }
+  if (kind === 'postcard') {
+    play.coins = cleanInt(body.coins, 0, 1000000000) ?? 0;
+    play.wins = cleanInt(body.wins, 0, 1000000) ?? 0;
+    play.losses = cleanInt(body.losses, 0, 1000000) ?? 0;
+    if (/^#[0-9a-fA-F]{6}$/.test(String(body.colour || ''))) play.colour = String(body.colour).toLowerCase();
+    return play;
+  }
+  if (kind === 'drink') {
+    if (!to) return null;
+    return play;
+  }
+  if (kind === 'home') {
+    play.open = body.open === true;
+    play.patches = cleanInt(body.patches, 1, 4) ?? 1;
+    play.invites = [];
+    for (const name of Array.isArray(body.invites) ? body.invites : []) {
+      const label = cleanLabel(name);
+      if (!label || play.invites.includes(label)) continue;
+      play.invites.push(label);
+      if (play.invites.length >= 8) break;
+    }
+    play.works = cleanWorks(body.works);
+    play.furniture = cleanFurniture(body.furniture);
+    return play;
+  }
+  return null;
 }
 
 function cleanCoord(value) {
@@ -452,7 +627,8 @@ export function createRoom({ word, now = () => Date.now() } = {}) {
     const session = sessionFor(tokenFrom(req));
     if (!session) return json(401, { error: 'Come in again.' });
     const body = req.json || {};
-    if (LIVE_KINDS.has(cleanKind(body.kind))) return json(400, { error: 'Send that on the live socket.' });
+    const postedKind = cleanKind(body.kind);
+    if (LIVE_KINDS.has(postedKind) || PLAY_KINDS.has(postedKind)) return json(400, { error: 'Send that on the live socket.' });
     const iv = cleanB64(body.iv, 8, 40);
     const data = cleanB64(body.data, 16, 12000);
     if (!iv || !data) return json(400, { error: 'That game parcel could not be carried.' });
@@ -493,6 +669,9 @@ export function createRoom({ word, now = () => Date.now() } = {}) {
     } else if (message.type === 'hit') {
       const hit = cleanHit(message.hit, session);
       if (hit) emit({ type: 'hit', hit }, conn);
+    } else if (message.type === 'play') {
+      const play = cleanPlay(message.play, session, now());
+      if (play) emit({ type: 'play', play });
     }
     if (takeLeave()) persist = 'leave';
     return { persist };

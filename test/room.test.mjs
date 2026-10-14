@@ -147,6 +147,38 @@ test('both browsers see each other without reconnecting', async () => {
   assert.equal(room.exportMeta().games.flat().length, 0);
 });
 
+test('a duel ready and a games invite travel without a group key', async () => {
+  const room = createRoom();
+  const ada = await enter(room, 'Ada');
+  const bea = await enter(room, 'Bea');
+  const adaLive = room.openLive(ada.token);
+  const beaLive = room.openLive(bea.token);
+  const readySent = adaLive.send({ type: 'play', play: { kind: 'ready' } });
+  assert.equal(readySent.persist, 'no');
+  const ready = beaLive.inbox.find((message) => message.type === 'play' && message.play.kind === 'ready');
+  assert.ok(ready, 'B hears that A is ready');
+  assert.equal(ready.play.from, ada.memberId);
+  assert.equal(ready.play.name, 'Ada');
+  assert.equal(typeof ready.play.at, 'number');
+
+  const round = `${ada.memberId}-1000`;
+  adaLive.send({ type: 'play', play: { kind: 'duel', phase: 'invite', round, to: bea.memberId } });
+  const invite = beaLive.inbox.find((message) => message.type === 'play' && message.play.phase === 'invite');
+  assert.ok(invite, 'the games invite reaches B');
+  assert.equal(invite.play.from, ada.memberId);
+  assert.equal(invite.play.to, bea.memberId);
+  assert.equal(invite.play.round, round);
+
+  beaLive.send({ type: 'play', play: { kind: 'duel', phase: 'accept', round, startAt: 5000, to: ada.memberId } });
+  const accepted = adaLive.inbox.find((message) => message.type === 'play' && message.play.phase === 'accept' && message.play.from === bea.memberId);
+  assert.ok(accepted, 'A hears that B accepted');
+  assert.equal(accepted.play.round, round);
+  assert.equal(accepted.play.startAt, 5000);
+
+  const view = await request(room, { method: 'GET', pathname: '/api/game', token: ada.token, search: 'since=0' });
+  assert.equal(view.json.parcels.length, 0);
+});
+
 test('a quiet member drops off the live map', async () => {
   let time = 1_000_000;
   const room = createRoom({ now: () => time });

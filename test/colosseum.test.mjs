@@ -42,6 +42,7 @@ import {
   circleAt,
   clampArena,
   clickWin,
+  colosseumCountdown,
   declineTrade,
   doorAt,
   dropOffer,
@@ -349,6 +350,35 @@ test('walking moves on both axes, stops at walls, and doors open when walked int
   let stuck = { ...spawnActor(town), x: tavern.x + 8, y: tavern.y - 20 };
   for (let i = 0; i < 20; i += 1) stuck = stepActor(stuck, { up: true }, town, 0.05);
   assert.ok(stuck.y > TOWN_BUILDING_TOP(town, 'tavern'));
+});
+
+test('two ready players count down from 3 to the same match, and one ready does not', () => {
+  const t = 5000;
+  const ada = { memberId: 'aaaa', at: t };
+  const alone = colosseumCountdown([ada], t + 500);
+  assert.equal(alone.phase, 'wait');
+  assert.equal(alone.n, null);
+  assert.equal(alone.matchId, '');
+  assert.equal(colosseumCountdown([ada], t + 8001).phase, 'idle');
+
+  const bea = { memberId: 'bbbb', at: t + 1000 };
+  const start = colosseumCountdown([ada, bea], t + 1000);
+  assert.equal(start.phase, 'count');
+  assert.equal(start.n, 3);
+  assert.equal(colosseumCountdown([bea, ada], t + 1000).matchId, start.matchId);
+  assert.equal(colosseumCountdown([ada, bea], t + 2000).n, 2);
+  assert.equal(colosseumCountdown([ada, bea], t + 3000).n, 1);
+  const go = colosseumCountdown([ada, bea], t + 4000);
+  assert.equal(go.phase, 'go');
+  assert.equal(go.n, 0);
+  assert.equal(go.matchId, start.matchId);
+  assert.ok(go.matchId.includes('aaaa') && go.matchId.includes('bbbb'));
+
+  const late = { memberId: 'bbbb', at: t + 7900 };
+  const held = colosseumCountdown([ada, late], t + 7900 + 2500);
+  assert.equal(held.phase, 'count');
+  assert.equal(held.n, 1);
+  assert.equal(held.matchId, colosseumCountdown([late, ada], t + 7900).matchId);
 });
 
 test('a remote cat eases across one update and snaps a missed step or a door', () => {

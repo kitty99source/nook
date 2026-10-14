@@ -853,6 +853,54 @@ export function waitingDuel(phase) {
   return phase === 'invite' || phase === 'invited';
 }
 
+// Two people ready at the gate. One person waits, then the wait clears. The count is 3, 2, 1, then the same match.
+export const GATE_WAIT_MS = 8000;
+export const GATE_STEP_MS = 1000;
+const GATE_GO_MS = 2000;
+
+export function colosseumCountdown(readies, now, waitMs = GATE_WAIT_MS, stepMs = GATE_STEP_MS) {
+  const at = Number(now);
+  const rows = [];
+  const seen = new Set();
+  const sorted = [...(readies || [])].filter((row) => row && row.memberId && Number.isFinite(Number(row.at)));
+  sorted.sort((a, b) => Number(a.at) - Number(b.at) || String(a.memberId).localeCompare(String(b.memberId)));
+  for (const row of sorted) {
+    const memberId = String(row.memberId);
+    if (seen.has(memberId)) continue;
+    seen.add(memberId);
+    rows.push({ memberId, at: Number(row.at) });
+  }
+  const countMs = stepMs * 3;
+  let pair = null;
+  for (let i = rows.length - 1; i >= 1; i -= 1) {
+    const second = rows[i];
+    const first = rows[i - 1];
+    if (second.at - first.at > waitMs) continue;
+    if (!Number.isFinite(at) || at - second.at > countMs + GATE_GO_MS) continue;
+    pair = [first, second];
+    break;
+  }
+  if (pair) {
+    const startAt = pair[1].at;
+    const elapsed = at - startAt;
+    let n = 3;
+    if (elapsed >= stepMs) n = 2;
+    if (elapsed >= stepMs * 2) n = 1;
+    if (elapsed >= countMs) n = 0;
+    const ids = [pair[0].memberId, pair[1].memberId].sort((a, b) => a.localeCompare(b));
+    return {
+      phase: n > 0 ? 'count' : 'go',
+      n,
+      matchId: `m-${ids[0]}-${ids[1]}-${startAt}`,
+      startAt,
+      ids,
+    };
+  }
+  const fresh = rows.filter((row) => Number.isFinite(at) && at - row.at <= waitMs && at - row.at >= -GATE_GO_MS);
+  if (fresh.length === 1) return { phase: 'wait', n: null, matchId: '', startAt: 0, ids: [fresh[0].memberId] };
+  return { phase: 'idle', n: null, matchId: '', startAt: 0, ids: [] };
+}
+
 // ---- Tab: chat or world -------------------------------------------------
 
 export function tabTarget({ inRoom, mode, field } = {}) {

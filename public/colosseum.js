@@ -1,7 +1,7 @@
 // The Colosseum of Friendship: a little town on Lantern Moon behind the chat.
-// Chat rules are untouched. The cat moves in this browser. Places, shots, and hits go out in the clear on the live socket.
+// Chat rules are untouched. Places, shots, hits, and the rest of play go out in the clear on the live socket.
 
-import { decryptJson, encryptJson } from './e2e.js';
+import { decryptJson } from './e2e.js';
 import { popBar, popup } from './popup.js';
 import {
   ARENA,
@@ -44,6 +44,7 @@ import {
   circleAt,
   clampArena,
   clickWin,
+  colosseumCountdown,
   declineTrade,
   doorAt,
   dropOffer,
@@ -196,6 +197,11 @@ const matchShots = [];
 const peerShots = [];
 const takenShots = new Set();
 const queued = new Map();
+const readies = new Map();
+let gateShown = '';
+let gateNotice = '';
+let serverSkew = 0;
+let serverAt = 0;
 const liveQueue = [];
 let pendingPlace = null;
 let lastSent = -1;
@@ -478,21 +484,11 @@ function bindPointer() {
   room.querySelector('.pop-bar [data-role="min"]')?.addEventListener('click', () => setTimeout(toWorld, 0));
 }
 
-// ---- Live places, and locked parcels for the rest of the game ----------------------
+// ---- Live play. Chat notes stay locked. -----------------------------------------------
 
-async function publish(kind, body) {
-  const key = api && api.getGroupKey();
-  const token = api && api.getToken();
-  if (!key || !token) return;
+function publish(kind, body) {
   gameSeq += 1;
-  try {
-    const parcel = await encryptJson(key, { v: 2, kind, from: me(), seq: gameSeq, body });
-    await fetch('/api/game', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-token': token },
-      body: JSON.stringify({ ...parcel, kind }),
-    });
-  } catch { /* the room can miss one parcel */ }
+  sendLive({ type: 'play', play: { ...(body || {}), kind, seq: gameSeq } });
 }
 
 function rememberCard(cardRow) {
@@ -581,6 +577,30 @@ function takeHit(hit) {
   if (hit.shotId) takenShots.add(hit.shotId);
   if (match && match.on && hit.matchKey === match.id) takeMatchHit(hit.from, hit.damage || 1);
   else hurtMe(hit.damage || 1);
+}
+
+function serverNow() {
+  return Date.now() + serverSkew;
+}
+
+function gateView(now = serverNow()) {
+  return colosseumCountdown([...readies.values()], now);
+}
+
+function applyPlay(play) {
+  if (!play || !play.kind) return;
+  if (play.kind === 'ready') {
+    if (!play.from || !Number.isFinite(Number(play.at))) return;
+    const at = Number(play.at);
+    if (at >= serverAt) {
+      serverAt = at;
+      serverSkew = at - Date.now();
+    }
+    readies.set(play.from, { memberId: play.from, at });
+    return;
+  }
+  if (play.from === me()) return;
+  applyParcel({ kind: play.kind, from: play.from, seq: play.seq || play.at || 1, body: play }, { memberId: play.from });
 }
 
 function applyParcel(payload, row) {
@@ -743,7 +763,11 @@ function openLive() {
     if (msg.type === 'place') applyPlace(msg.place);
     if (msg.type === 'shot') takeShot(msg.shot);
     if (msg.type === 'hit') takeHit(msg.hit);
-    if (msg.type === 'gone' && msg.memberId) others.delete(msg.memberId);
+    if (msg.type === 'gone' && msg.memberId) {
+      others.delete(msg.memberId);
+      readies.delete(msg.memberId);
+    }
+    if (msg.type === 'play') applyPlay(msg.play);
     if (msg.type === 'parcel') void ingestParcel(msg.parcel);
   };
   ws.onopen = () => {
@@ -825,7 +849,7 @@ function sendLive(message) {
       return;
     } catch { /* hold the latest few */ }
   }
-  if (liveQueue.length < 8) liveQueue.push(message);
+  if (liveQueue.length < 24) liveQueue.push(message);
 }
 
 function plainShot(shot) {
@@ -974,6 +998,7 @@ function promptText() {
   const npc = nearbyNpc();
   if (npc) return { text: `E · Talk to ${NPC_BY_ID.get(npc.id)?.name || 'them'}`, x: npc.x, y: npc.y - 26 };
   const spot = nearbySpot();
+  if (spot && spot.kind === 'arena') return { text: 'E · Ready for a duel', x: spot.x, y: spot.y - 22 };
   if (spot) return { text: `E · ${spot.label}`, x: spot.x, y: spot.y - 22 };
   const door = nearbyDoor();
   if (door) return { text: `E · ${door.to === 'town' ? 'Outside' : door.label}`, x: door.x + door.w / 2, y: door.y - 6 };
@@ -1293,6 +1318,56 @@ function stepAliens(dt) {
 
 // ---- Matches in the Colosseum -----------------------------------------------------------
 
+function pressGate() {
+  if (match && match.on) return;
+  const view = gateView();
+  if (view.phase === 'count' || view.phase === 'go') return;
+  publish('ready', {});
+  say('Waiting at the Colosseum.');
+}
+
+function beginSharedMatch(view) {
+  if (!view || !view.matchId || (match && match.on)) return;
+  if (mapId !== 'town') {
+    mapId = 'town';
+    mapOwner = '';
+    map = getMap('town');
+  }
+  const slot = view.ids && view.ids[0] === me() ? 0 : 1;
+  const rival = (view.ids || []).find((id) => id !== me()) || '';
+  match = { on: true, id: view.matchId, lives: 3, livesLeft: 3, invuln: 0, paid: false, rival };
+  actor = { ...actor, ...respawn(ARENA.starts[slot] || ARENA.starts[0]) };
+  say('Three lives. Aim with the mouse, click to fire.');
+  closeCard();
+  paintHud();
+  publishPlace(true);
+}
+
+function stepGate() {
+  const view = gateView();
+  const mine = (view.ids || []).includes(me());
+  if (view.phase === 'wait') {
+    if (mine) gateNotice = 'wait';
+    return;
+  }
+  if (view.phase === 'count') {
+    if (mine) gateNotice = 'count';
+    return;
+  }
+  if (view.phase === 'go' && view.matchId && gateShown !== view.matchId) {
+    gateShown = view.matchId;
+    gateNotice = '';
+    readies.clear();
+    if (mine) beginSharedMatch(view);
+    return;
+  }
+  if (view.phase === 'idle' && gateNotice === 'wait') {
+    gateNotice = '';
+    readies.clear();
+    say('Nobody else came to the gate.');
+  }
+}
+
 function startMatch(lives) {
   if (mapId !== 'town') return;
   const id = `m-${me()}-${Date.now()}`;
@@ -1505,6 +1580,7 @@ function netTick(dt) {
     flushPlace();
   } else if (pendingPlace && due) flushPlace();
   flushLive();
+  stepGate();
   if (queued.size) void drainQueue();
   homeTimer += dt;
   if (atHome() && homeTimer > 1.5) {
@@ -1728,6 +1804,13 @@ function drawLabels(ctx, w, h) {
     drawTag(ctx, 'Paused · Tab or click the world to play', w / 2, Math.round(28 * devicePixelRatioSafe()), scale * 1.1, '#fff6e6');
   }
   if (match && match.on) drawTag(ctx, `${match.livesLeft} ${match.livesLeft === 1 ? 'life' : 'lives'} left`, w / 2, h - Math.round(96 * devicePixelRatioSafe()), scale, '#ffd166');
+  if (map.id === 'town' && !(match && match.on)) {
+    const view = gateView();
+    const fence = ARENA.fence;
+    const at = screenOf(fence.x + fence.w / 2, fence.y - 8);
+    if (view.phase === 'wait') drawTag(ctx, 'Waiting', at.x, at.y, scale, '#ffd166');
+    else if (view.phase === 'count') drawTag(ctx, String(view.n), at.x, at.y, scale * 2.4, '#ffd166');
+  }
 }
 
 // ---- HUD, item bar, emotes ------------------------------------------------------------------
@@ -1941,7 +2024,10 @@ function useSpot(spot) {
     say('Home to Lantern Moon.');
     return null;
   }
-  if (spot.kind === 'arena') return arenaCard(spot);
+  if (spot.kind === 'arena') {
+    pressGate();
+    return null;
+  }
   if (spot.kind === 'home') return panelCard(spot);
   if (spot.kind === 'work') return workCard(spot);
   const flavour = {
@@ -2178,10 +2264,22 @@ function paintGames() {
   const stage = h('div', 'colo-stage');
   frameEl.append(leftPic, rightPic, leftWall, rightWall, stage);
   const row = h('div', 'colo-row');
-  row.append(button('Typing', () => startTyping(stage)), button('Click', () => startClick(stage)), button('Duel', () => startDuel()));
-  els.panel.append(frameEl, row, h('p', 'colo-note', 'Ten seconds each. A win pays coins. Matches with weapons happen at the Colosseum gate in town.'));
+  row.append(button('Typing', () => startTyping(stage)), button('Click', () => startClick(stage)));
+  els.panel.append(frameEl, row, h('p', 'colo-note', 'Ten seconds each. A win pays coins. A weapon match starts at the Colosseum gate when two people press E.'));
+  const roomPeople = people().filter((person) => person.id !== me());
+  if (!roomPeople.length) els.panel.append(h('p', 'colo-note', 'Nobody else is in the room.'));
+  else {
+    const picks = h('div', 'colo-list');
+    for (const person of roomPeople) {
+      const line = h('div', 'colo-row');
+      line.append(h('span', 'bag-name', person.name || 'Someone'));
+      line.append(button('Duel', () => inviteDuel(person)));
+      picks.append(line);
+    }
+    els.panel.append(picks);
+  }
   if (duel && waitingDuel(duel.phase)) els.panel.append(button('Leave the duel', leaveDuel));
-  if (duel && duel.phase === 'invited') els.panel.append(button('Accept duel', () => acceptDuel(stage, leftWall, rightWall)));
+  if (duel && duel.phase === 'invited') els.panel.append(button(`Accept duel${duel.name ? ` from ${duel.name}` : ''}`, () => acceptDuel(stage, leftWall, rightWall)));
   if (duel && duel.phase === 'live') readyDuel(stage, leftWall, rightWall);
 }
 
@@ -2510,8 +2608,9 @@ function takeDuel(from, body) {
     els.spark = null;
     say('The duel was called off.');
   } else if (body.phase === 'invite' && from !== me()) {
-    duel = { phase: 'invited', round: body.round, from, role: 'right', myScore: 0, theirScore: 0, startAt: 0 };
-    say('Someone wants a paw-sword duel. See Games.');
+    if (body.to && body.to !== me()) return;
+    duel = { phase: 'invited', round: body.round, from, role: 'right', myScore: 0, theirScore: 0, startAt: 0, name: body.name || '' };
+    say(`${body.name || 'Someone'} wants a duel. See Games.`);
   } else if (body.phase === 'accept' && duel && duel.round === body.round) {
     duel.phase = 'live';
     duel.startAt = body.startAt;
@@ -2568,15 +2667,15 @@ function startClick(stage) {
   stage.append(canvas);
 }
 
-function startDuel() {
-  if (people().filter((person) => person.id !== me()).length < 1) {
-    say('The duel needs two people in the room.');
+function inviteDuel(person) {
+  if (!person || !person.id || person.id === me()) {
+    say('The duel needs someone else in the room.');
     return;
   }
   const round = `${me()}-${Date.now()}`;
-  duel = { phase: 'invite', round, role: 'left', myScore: 0, theirScore: 0, startAt: 0 };
-  publish('duel', { phase: 'invite', round });
-  say('Waiting for the other person. Tap your wall when the spark is on it.');
+  duel = { phase: 'invite', round, to: person.id, role: 'left', myScore: 0, theirScore: 0, startAt: 0, name: person.name || '' };
+  publish('duel', { phase: 'invite', round, to: person.id });
+  say(`Waiting for ${person.name}. Tap your wall when the spark is on it.`);
   paintPanel();
 }
 
@@ -2585,7 +2684,7 @@ function acceptDuel(stage, leftWall, rightWall) {
   const startAt = Date.now() + 600;
   duel.phase = 'live';
   duel.startAt = startAt;
-  publish('duel', { phase: 'accept', round: duel.round, startAt });
+  publish('duel', { phase: 'accept', round: duel.round, startAt, to: duel.from });
   readyDuel(stage, leftWall, rightWall);
 }
 
@@ -2769,6 +2868,9 @@ export function settleColosseum() {
   aliens.length = 0;
   others.clear();
   homes.clear();
+  readies.clear();
+  gateShown = '';
+  gateNotice = '';
   closeTalk();
   closeCard();
   persist();
