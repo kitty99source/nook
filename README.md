@@ -1,6 +1,10 @@
 # The Nook
 
-The Nook is one chat room in the browser. A join link for colleagues is not set yet. The standing Worker is deployed, and this Cloudflare account has no domain to attach. A workers.dev hostname is not the join link.
+The Nook is one chat room in the browser. Colleagues join here:
+
+**https://nooknook.world**
+
+The door word is `pspsps`. The address starts working after Namecheap uses the Cloudflare nameservers `mario.ns.cloudflare.com` and `olga.ns.cloudflare.com`.
 
 Nothing to install. At the door, type the room word `pspsps`, a name, and a picture if you want one. That word is the same for everyone until it is changed. It is not written into `data/config.json`. To change it later, set the Worker secret `NOOK_ROOM_WORD` in the Cloudflare dashboard. Leave it unset and the word stays `pspsps`.
 
@@ -10,7 +14,7 @@ Click a picture in the chat and it opens larger inside the chat window. The town
 
 ## Who does what
 
-**Chat-only person.** Open the standing link. Type `pspsps`, what to call you, and a picture if you like.
+**Chat-only person.** Open https://nooknook.world. Type `pspsps`, what to call you, and a picture if you like.
 
 **Coder.** Prakriti adds you as a collaborator on this private GitHub repo when you should edit the code. Then clone it, install Node 24, and run the start script. You do not need to be a collaborator just to chat. The start script is for working on the code on your laptop. It is not how colleagues get in.
 
@@ -30,11 +34,13 @@ To publish a change to the standing link, from this repo:
 npx wrangler deploy
 ```
 
-Once a join hostname is attached, colleagues keep that same address. Open tabs ask for the new page. There is no dist folder to commit.
+Colleagues keep https://nooknook.world. Open tabs ask for the new page. There is no dist folder to commit.
 
 ## How a chat-only person joins
 
-A public join link is not ready. Chat-only people use a normal browser and never clone the repo. They need a hostname on a domain this account already has, and this account has none yet.
+Open https://nooknook.world. Nothing to install. The door word is `pspsps`.
+
+That address works after Namecheap uses Custom DNS with `mario.ns.cloudflare.com` and `olga.ns.cloudflare.com`. Chat-only people use a normal browser. They never clone the repo.
 
 ## How a coder joins
 
