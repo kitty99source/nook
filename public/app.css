@@ -1413,13 +1413,270 @@ body[data-theme="dark"] .messages li.empty {
   font-family: Palatino, "Iowan Old Style", Georgia, serif;
 }
 
+body[data-theme="vapor-pastel"] {
+  color-scheme: light;
+  --ink: #2e1a4a;
+  --muted: #4a3568;
+  --lilac: #7a3eb8;
+  --lilac-soft: #f6e8ff;
+  --paper: #fff7fc;
+  --desk: #ffe8f6;
+  --line: #e4c6ef;
+  --warn: #7a2840;
+  --chip: #ffeef8;
+  --bubble: #ffffff;
+  --input: #fff;
+  --on-accent: #fffafc;
+  --lilac-deep: #5c2f96;
+  --float: #fff7fc;
+  --say: #fff;
+  --vw-title-a: #f4e4ff;
+  --vw-title-b: #c5e8ff;
+  --vw-title-ink: #2e1a4a;
+}
+
+body[data-theme="vapor-sunset"] {
+  color-scheme: dark;
+  --ink: #fff4fb;
+  --muted: #e7c6df;
+  --lilac: #ff7ccf;
+  --lilac-soft: #2a1658;
+  --paper: #1a1038;
+  --desk: #120c2c;
+  --line: #6a3a90;
+  --warn: #ffc09a;
+  --chip: #2a1848;
+  --bubble: #221448;
+  --input: #140e30;
+  --on-accent: #1a0f3a;
+  --lilac-deep: #ffb0e0;
+  --float: #1a1038;
+  --say: #221448;
+  --vw-title-a: #c43a78;
+  --vw-title-b: #2a4a9a;
+  --vw-title-ink: #fff8fc;
+}
+
+body[data-theme="vapor-neon"] {
+  color-scheme: dark;
+  --ink: #f7f0ff;
+  --muted: #d4c6ee;
+  --lilac: #ff2bd6;
+  --lilac-soft: #2a1048;
+  --paper: #160a28;
+  --desk: #0c0618;
+  --line: #5a2a78;
+  --warn: #ffc2b8;
+  --chip: #241038;
+  --bubble: #1c0c32;
+  --input: #100818;
+  --on-accent: #1a0828;
+  --lilac-deep: #ff71ce;
+  --float: #160a28;
+  --say: #1c0c32;
+  --vw-title-a: #9d0070;
+  --vw-title-b: #3d0d8a;
+  --vw-title-ink: #fff8ff;
+}
+
+/* The town canvas paints an opaque sky. On a vapor theme it sits over the
+   scene, so it fades enough for the sun and floor to stay visible. */
+body[data-theme^="vapor-"] .world {
+  opacity: 0.32;
+}
+
+body[data-theme^="vapor-"] .door input {
+  background: var(--input);
+  color: var(--ink);
+}
+
+body[data-theme^="vapor-"] .door-card,
+body[data-theme^="vapor-"] .pop,
+body[data-theme^="vapor-"] .float {
+  border: 2px solid var(--vw-shadow-hard);
+  border-radius: 0;
+  box-shadow: 3px 3px 0 var(--vw-shadow-hard);
+}
+
+body[data-theme^="vapor-"] .pop-bar,
+body[data-theme^="vapor-"] .float-bar {
+  background: linear-gradient(90deg, var(--vw-title-a), var(--vw-title-b));
+  border-bottom: 2px solid var(--vw-shadow-hard);
+  border-radius: 0;
+}
+
+body[data-theme^="vapor-"] .pop-title,
+body[data-theme^="vapor-"] .float-title {
+  font-family: ui-monospace, "Courier New", monospace;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--vw-title-ink);
+  font-size: 12px;
+}
+
+body[data-theme^="vapor-"] .pop-bar .grip,
+body[data-theme^="vapor-"] .float-bar .grip {
+  background-image: radial-gradient(circle, var(--vw-title-ink) 1.4px, transparent 1.5px);
+}
+
+body[data-theme^="vapor-"] .pop-btn {
+  width: 22px;
+  height: 22px;
+  border: 2px solid var(--vw-title-ink);
+  border-radius: 0;
+  background: transparent;
+  color: var(--vw-title-ink);
+  box-shadow: none;
+  font-family: ui-monospace, "Courier New", monospace;
+}
+
+body[data-theme^="vapor-"] .door button,
+body[data-theme^="vapor-"] #send,
+body[data-theme^="vapor-"] .float-done {
+  border: 2px solid var(--vw-shadow-hard);
+  border-radius: 0;
+  background: linear-gradient(90deg, var(--vw-title-a), var(--vw-title-b));
+  color: var(--vw-title-ink);
+  box-shadow: 3px 3px 0 var(--vw-shadow-hard);
+  font-family: ui-monospace, "Courier New", monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+body[data-theme^="vapor-"] .door button:hover,
+body[data-theme^="vapor-"] #send:hover,
+body[data-theme^="vapor-"] .float-done:hover {
+  background: linear-gradient(90deg, var(--vw-title-b), var(--vw-title-a));
+}
+
+body[data-theme^="vapor-"] .door button:active,
+body[data-theme^="vapor-"] #send:active,
+body[data-theme^="vapor-"] .float-done:active,
+body[data-theme^="vapor-"] .pop-btn:active {
+  transform: translate(2px, 2px);
+  box-shadow: 1px 1px 0 var(--vw-shadow-hard);
+}
+
+/* Chrome blobs: mouse shift of at most 12px, on the svg so the drift
+   animation on .vapor-blob keeps its own transform. */
+body[data-theme^="vapor-"] .vapor-blob svg {
+  transform: translate(var(--blob-x, 0px), var(--blob-y, 0px));
+}
+
+#vapor[data-px="-12"] .vapor-blob--1 svg { --blob-x: -12px; }
+#vapor[data-px="-12"] .vapor-blob--2 svg { --blob-x: 7px; }
+#vapor[data-py="-12"] .vapor-blob--1 svg { --blob-y: -12px; }
+#vapor[data-py="-12"] .vapor-blob--2 svg { --blob-y: 7px; }
+#vapor[data-px="-11"] .vapor-blob--1 svg { --blob-x: -11px; }
+#vapor[data-px="-11"] .vapor-blob--2 svg { --blob-x: 7px; }
+#vapor[data-py="-11"] .vapor-blob--1 svg { --blob-y: -11px; }
+#vapor[data-py="-11"] .vapor-blob--2 svg { --blob-y: 7px; }
+#vapor[data-px="-10"] .vapor-blob--1 svg { --blob-x: -10px; }
+#vapor[data-px="-10"] .vapor-blob--2 svg { --blob-x: 6px; }
+#vapor[data-py="-10"] .vapor-blob--1 svg { --blob-y: -10px; }
+#vapor[data-py="-10"] .vapor-blob--2 svg { --blob-y: 6px; }
+#vapor[data-px="-9"] .vapor-blob--1 svg { --blob-x: -9px; }
+#vapor[data-px="-9"] .vapor-blob--2 svg { --blob-x: 5px; }
+#vapor[data-py="-9"] .vapor-blob--1 svg { --blob-y: -9px; }
+#vapor[data-py="-9"] .vapor-blob--2 svg { --blob-y: 5px; }
+#vapor[data-px="-8"] .vapor-blob--1 svg { --blob-x: -8px; }
+#vapor[data-px="-8"] .vapor-blob--2 svg { --blob-x: 5px; }
+#vapor[data-py="-8"] .vapor-blob--1 svg { --blob-y: -8px; }
+#vapor[data-py="-8"] .vapor-blob--2 svg { --blob-y: 5px; }
+#vapor[data-px="-7"] .vapor-blob--1 svg { --blob-x: -7px; }
+#vapor[data-px="-7"] .vapor-blob--2 svg { --blob-x: 4px; }
+#vapor[data-py="-7"] .vapor-blob--1 svg { --blob-y: -7px; }
+#vapor[data-py="-7"] .vapor-blob--2 svg { --blob-y: 4px; }
+#vapor[data-px="-6"] .vapor-blob--1 svg { --blob-x: -6px; }
+#vapor[data-px="-6"] .vapor-blob--2 svg { --blob-x: 4px; }
+#vapor[data-py="-6"] .vapor-blob--1 svg { --blob-y: -6px; }
+#vapor[data-py="-6"] .vapor-blob--2 svg { --blob-y: 4px; }
+#vapor[data-px="-5"] .vapor-blob--1 svg { --blob-x: -5px; }
+#vapor[data-px="-5"] .vapor-blob--2 svg { --blob-x: 3px; }
+#vapor[data-py="-5"] .vapor-blob--1 svg { --blob-y: -5px; }
+#vapor[data-py="-5"] .vapor-blob--2 svg { --blob-y: 3px; }
+#vapor[data-px="-4"] .vapor-blob--1 svg { --blob-x: -4px; }
+#vapor[data-px="-4"] .vapor-blob--2 svg { --blob-x: 2px; }
+#vapor[data-py="-4"] .vapor-blob--1 svg { --blob-y: -4px; }
+#vapor[data-py="-4"] .vapor-blob--2 svg { --blob-y: 2px; }
+#vapor[data-px="-3"] .vapor-blob--1 svg { --blob-x: -3px; }
+#vapor[data-px="-3"] .vapor-blob--2 svg { --blob-x: 2px; }
+#vapor[data-py="-3"] .vapor-blob--1 svg { --blob-y: -3px; }
+#vapor[data-py="-3"] .vapor-blob--2 svg { --blob-y: 2px; }
+#vapor[data-px="-2"] .vapor-blob--1 svg { --blob-x: -2px; }
+#vapor[data-px="-2"] .vapor-blob--2 svg { --blob-x: 1px; }
+#vapor[data-py="-2"] .vapor-blob--1 svg { --blob-y: -2px; }
+#vapor[data-py="-2"] .vapor-blob--2 svg { --blob-y: 1px; }
+#vapor[data-px="-1"] .vapor-blob--1 svg { --blob-x: -1px; }
+#vapor[data-px="-1"] .vapor-blob--2 svg { --blob-x: 1px; }
+#vapor[data-py="-1"] .vapor-blob--1 svg { --blob-y: -1px; }
+#vapor[data-py="-1"] .vapor-blob--2 svg { --blob-y: 1px; }
+#vapor[data-px="0"] .vapor-blob--1 svg { --blob-x: 0px; }
+#vapor[data-px="0"] .vapor-blob--2 svg { --blob-x: 0px; }
+#vapor[data-py="0"] .vapor-blob--1 svg { --blob-y: 0px; }
+#vapor[data-py="0"] .vapor-blob--2 svg { --blob-y: 0px; }
+#vapor[data-px="1"] .vapor-blob--1 svg { --blob-x: 1px; }
+#vapor[data-px="1"] .vapor-blob--2 svg { --blob-x: -1px; }
+#vapor[data-py="1"] .vapor-blob--1 svg { --blob-y: 1px; }
+#vapor[data-py="1"] .vapor-blob--2 svg { --blob-y: -1px; }
+#vapor[data-px="2"] .vapor-blob--1 svg { --blob-x: 2px; }
+#vapor[data-px="2"] .vapor-blob--2 svg { --blob-x: -1px; }
+#vapor[data-py="2"] .vapor-blob--1 svg { --blob-y: 2px; }
+#vapor[data-py="2"] .vapor-blob--2 svg { --blob-y: -1px; }
+#vapor[data-px="3"] .vapor-blob--1 svg { --blob-x: 3px; }
+#vapor[data-px="3"] .vapor-blob--2 svg { --blob-x: -2px; }
+#vapor[data-py="3"] .vapor-blob--1 svg { --blob-y: 3px; }
+#vapor[data-py="3"] .vapor-blob--2 svg { --blob-y: -2px; }
+#vapor[data-px="4"] .vapor-blob--1 svg { --blob-x: 4px; }
+#vapor[data-px="4"] .vapor-blob--2 svg { --blob-x: -2px; }
+#vapor[data-py="4"] .vapor-blob--1 svg { --blob-y: 4px; }
+#vapor[data-py="4"] .vapor-blob--2 svg { --blob-y: -2px; }
+#vapor[data-px="5"] .vapor-blob--1 svg { --blob-x: 5px; }
+#vapor[data-px="5"] .vapor-blob--2 svg { --blob-x: -3px; }
+#vapor[data-py="5"] .vapor-blob--1 svg { --blob-y: 5px; }
+#vapor[data-py="5"] .vapor-blob--2 svg { --blob-y: -3px; }
+#vapor[data-px="6"] .vapor-blob--1 svg { --blob-x: 6px; }
+#vapor[data-px="6"] .vapor-blob--2 svg { --blob-x: -4px; }
+#vapor[data-py="6"] .vapor-blob--1 svg { --blob-y: 6px; }
+#vapor[data-py="6"] .vapor-blob--2 svg { --blob-y: -4px; }
+#vapor[data-px="7"] .vapor-blob--1 svg { --blob-x: 7px; }
+#vapor[data-px="7"] .vapor-blob--2 svg { --blob-x: -4px; }
+#vapor[data-py="7"] .vapor-blob--1 svg { --blob-y: 7px; }
+#vapor[data-py="7"] .vapor-blob--2 svg { --blob-y: -4px; }
+#vapor[data-px="8"] .vapor-blob--1 svg { --blob-x: 8px; }
+#vapor[data-px="8"] .vapor-blob--2 svg { --blob-x: -5px; }
+#vapor[data-py="8"] .vapor-blob--1 svg { --blob-y: 8px; }
+#vapor[data-py="8"] .vapor-blob--2 svg { --blob-y: -5px; }
+#vapor[data-px="9"] .vapor-blob--1 svg { --blob-x: 9px; }
+#vapor[data-px="9"] .vapor-blob--2 svg { --blob-x: -5px; }
+#vapor[data-py="9"] .vapor-blob--1 svg { --blob-y: 9px; }
+#vapor[data-py="9"] .vapor-blob--2 svg { --blob-y: -5px; }
+#vapor[data-px="10"] .vapor-blob--1 svg { --blob-x: 10px; }
+#vapor[data-px="10"] .vapor-blob--2 svg { --blob-x: -6px; }
+#vapor[data-py="10"] .vapor-blob--1 svg { --blob-y: 10px; }
+#vapor[data-py="10"] .vapor-blob--2 svg { --blob-y: -6px; }
+#vapor[data-px="11"] .vapor-blob--1 svg { --blob-x: 11px; }
+#vapor[data-px="11"] .vapor-blob--2 svg { --blob-x: -7px; }
+#vapor[data-py="11"] .vapor-blob--1 svg { --blob-y: 11px; }
+#vapor[data-py="11"] .vapor-blob--2 svg { --blob-y: -7px; }
+#vapor[data-px="12"] .vapor-blob--1 svg { --blob-x: 12px; }
+#vapor[data-px="12"] .vapor-blob--2 svg { --blob-x: -7px; }
+#vapor[data-py="12"] .vapor-blob--1 svg { --blob-y: 12px; }
+#vapor[data-py="12"] .vapor-blob--2 svg { --blob-y: -7px; }
+
 @media (prefers-reduced-motion: reduce) {
   * { scroll-behavior: auto !important; }
   .cat-figure,
   .cat-tail,
   .disco-ball,
   .float.leaving,
-  .paperclip {
+  .paperclip,
+  body[data-theme="vapor-pastel"] .msg-glitch,
+  body[data-theme="vapor-sunset"] .msg-glitch,
+  body[data-theme="vapor-neon"] .msg-glitch,
+  body[data-theme="vapor-pastel"] .vapor-blob,
+  body[data-theme="vapor-sunset"] .vapor-blob,
+  body[data-theme="vapor-neon"] .vapor-blob {
     animation: none !important;
     transition: none !important;
   }

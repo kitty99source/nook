@@ -170,10 +170,18 @@ function discoBallSvg() {
 const SEQUIN_DIAM = 64;
 const PIXEL = 8;
 const LOOK_KEY = 'nook-look';
-const THEMES = ['paper', 'dark', 'cyberpunk', 'akira'];
+const THEMES = ['paper', 'dark', 'cyberpunk', 'akira', 'vapor-pastel', 'vapor-sunset', 'vapor-neon'];
 const SEQUIN_LOOKS = ['pixel', 'sleek', 'matrix'];
 const COLOUR_WAYS = ['silver', 'rainbow', 'crimson', 'neon', 'akira', 'matrix'];
-const THEME_BAR = { paper: '#efe8dc', dark: '#100e0c', cyberpunk: '#070910', akira: '#000000' };
+const THEME_BAR = {
+  paper: '#efe8dc',
+  dark: '#100e0c',
+  cyberpunk: '#070910',
+  akira: '#000000',
+  'vapor-pastel': '#ffd0ea',
+  'vapor-sunset': '#2a1458',
+  'vapor-neon': '#12061f',
+};
 
 const RAINBOW = [
   { fill: '#e15b6b', rim: '#9d3144' },

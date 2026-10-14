@@ -282,7 +282,7 @@ function renderNotice(text) {
   messages.append(li);
 }
 
-function paintPage({ stick = false, reset = false } = {}) {
+function paintPage({ stick = false, reset = false, glitchIds = null } = {}) {
   const count = pageCount();
   if (following) viewPage = count - 1;
   if (viewPage < 0) viewPage = 0;
@@ -294,7 +294,7 @@ function paintPage({ stick = false, reset = false } = {}) {
   else {
     for (const item of slice) {
       if (item.kind === 'notice') renderNotice(item.text);
-      else renderMessage(item);
+      else renderMessage(item, !!(glitchIds && glitchIds.has(item.id)));
     }
   }
   olderPage.disabled = viewPage <= 0;
@@ -811,7 +811,16 @@ function appendNote(bubble, text) {
   }
 }
 
-function renderMessage(message) {
+function glitchMessage(li) {
+  const theme = document.body.dataset.theme || '';
+  if (!theme.startsWith('vapor-')) return;
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  li.classList.add('msg-glitch');
+  // A timer, not animationend: the ::after split fires animationend as well.
+  window.setTimeout(() => li.classList.remove('msg-glitch'), 320);
+}
+
+function renderMessage(message, glitch = false) {
   const empty = messages.querySelector('.empty');
   if (empty) empty.remove();
   const li = document.createElement('li');
@@ -884,6 +893,7 @@ function renderMessage(message) {
   li.append(bubble);
   if (!message.locked) bindNote(li, message);
   messages.append(li);
+  if (glitch) glitchMessage(li);
 }
 
 function takeMessages(list, notify) {
@@ -897,7 +907,9 @@ function takeMessages(list, notify) {
     onScreen.push(message);
     feed.push(message);
   }
-  if (fresh.length || !feed.length) paintPage({ stick });
+  if (fresh.length || !feed.length) {
+    paintPage({ stick, glitchIds: new Set(fresh.map((message) => message.id)) });
+  }
   if (!fresh.length) return;
   const others = fresh.filter((message) => !message.mine);
   if (!others.length) return;

@@ -393,6 +393,9 @@ const publicFiles = new Map([
   ['/colosseum-world.mjs', 'colosseum-world.mjs'],
   ['/colosseum-story.mjs', 'colosseum-story.mjs'],
   ['/popup.js', 'popup.js'],
+  ['/vapor.js', 'vapor.js'],
+  ['/vapor-art.js', 'vapor-art.js'],
+  ['/vapor.css', 'vapor.css'],
   ['/paperclip.png', 'paperclip.png'],
   ['/favicon.svg', 'favicon.svg'],
 ]);

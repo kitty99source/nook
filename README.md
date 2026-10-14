@@ -55,6 +55,9 @@ Do not commit `data/`, secrets, or room words. See below.
 | --- | --- |
 | `server.mjs` | The room. HTTP on `127.0.0.1`. Holds the live locked parcels in memory. No message database. |
 | `public/index.html`, `public/app.js`, `public/app.css` | The page: door, the chat window, composer, Settings. |
+| `public/vapor.js` | Puts the vaporwave scene behind the windows when a Vapor theme is on, and takes it away for the other themes. |
+| `public/vapor-art.js` | The sun, mountains, clouds, floor and chrome blobs, drawn in code. |
+| `public/vapor.css` | How that scene sits on the page and how it moves. |
 | `public/popup.js` | Square windows over the world: drag by the bar, resize from the corner, minimise to the tray. Remembers only window layout in this browser. |
 | `public/e2e.js` | Browser encryption. Web Crypto only. Keys stay in memory. |
 | `public/whimsy.js`, `public/affirmations.js` | Disco cats, sequins and the disco light, the affirmation cat, and its lines. |
@@ -70,6 +73,10 @@ Do not commit `data/`, secrets, or room words. See below.
 | `start-nook.command` | Mac double-click. |
 | `start-nook.bat` | Windows double-click. |
 | `data/` | Optional local config on the host laptop (`data/config.json` may hold a host name). Git-ignored. Not messages. |
+
+## Themes
+
+Settings lists Paper, Dark, Cyberpunk, Akira Red, Vapor pastel, Vapor sunset, and Vapor neon. A Vapor theme puts a sun and a floor behind the windows. The sun stays below the horizon until you come in, then it climbs. A new message flickers for a moment. The windows pick up a hard title bar. If the computer asks for less motion, the scene stays still. The choice stays in this browser.
 
 ## The world and the windows
 
