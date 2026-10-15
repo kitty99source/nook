@@ -140,7 +140,7 @@
         </fieldset>
         <button type="button" id="disco-btn" aria-pressed="false">Disco</button>
         <button type="button" id="sequin-btn" aria-pressed="false">Sequins</button>
-        <div id="vapor-options" hidden>
+        <div id="vapor-options" class="chat-only" hidden>
           <button type="button" id="chat-scene-btn" aria-pressed="false">Chat scene</button>
           <fieldset class="settings-group">
             <legend>Window style</legend>
@@ -170,7 +170,7 @@
           </div>
           <p id="colour-note" class="settings-note" hidden></p>
         </fieldset>
-        <fieldset class="settings-group">
+        <fieldset class="settings-group chat-only">
           <legend>Picture</legend>
           <button type="button" id="change-picture">Change picture</button>
           <input id="settings-picture" type="file" accept="image/*" hidden>
@@ -189,8 +189,8 @@
         </fieldset>
         <div class="settings-actions">
           <button type="button" id="affirm-btn">Affirmation cat</button>
-          <button type="button" id="copy-chat">Copy chat</button>
-          <button type="button" id="save-note">Save to note</button>
+          <button type="button" class="chat-only" id="copy-chat">Copy chat</button>
+          <button type="button" class="chat-only" id="save-note">Save to note</button>
         </div>
     </div>
   </section>

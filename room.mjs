@@ -17,6 +17,8 @@ export const JSON_LIMIT = 256 * 1024;
 export const UPLOAD_LIMIT = 8 * 1024 * 1024;
 export const PAGE_CSP = "default-src 'self'; img-src 'self' blob: https:; media-src https:; style-src 'self'; script-src 'self'; connect-src 'self' https://gifjif.com; frame-src https://www.youtube.com https://www.youtube-nocookie.com https://player.vimeo.com https://www.tiktok.com https://www.instagram.com; base-uri 'none'; frame-ancestors 'none'";
 
+const TOWN_WORD = 'bingbong';
+
 export function doorWord(value) {
   const word = String(value ?? '').replace(/[\r\n\u0000]/g, '').trim();
   if (!word || word.length > 80) return 'pspsps';
@@ -347,6 +349,7 @@ function cleanPlace(body, session, at) {
     look,
     colour,
     match: cleanMatch(body.match),
+    order: session.order,
     at,
   };
 }
@@ -436,11 +439,12 @@ export function createRoom({ word, now = () => Date.now() } = {}) {
     }
   }
 
-  function admit(name, publicKey, cat, photo) {
+  function admit(name, publicKey, cat, photo, chat = true) {
     const token = crypto.randomBytes(24).toString('hex');
     const memberId = crypto.randomBytes(8).toString('hex');
     const order = nextOrder;
     nextOrder += 1;
+    const inChat = chat !== false;
     sessions.set(token, {
       name,
       memberId,
@@ -448,10 +452,11 @@ export function createRoom({ word, now = () => Date.now() } = {}) {
       cat: cat || '',
       photo: photo || '',
       order,
+      chat: inChat,
       lastSeen: now(),
       typingUntil: 0,
     });
-    return { token, memberId, name };
+    return { token, memberId, name, order, chat: inChat };
   }
 
   function sessionFor(token) {
@@ -494,7 +499,7 @@ export function createRoom({ word, now = () => Date.now() } = {}) {
     const ids = presentIds();
     const list = [];
     for (const session of sessions.values()) {
-      if (!ids.has(session.memberId)) continue;
+      if (!ids.has(session.memberId) || session.chat === false) continue;
       const person = {
         id: session.memberId,
         name: session.name,
@@ -522,7 +527,7 @@ export function createRoom({ word, now = () => Date.now() } = {}) {
     const people = new Map();
     const typing = new Set();
     for (const [token, session] of sessions) {
-      if (at - session.lastSeen > PRESENCE_MS) continue;
+      if (at - session.lastSeen > PRESENCE_MS || session.chat === false) continue;
       people.set(session.name, { cat: session.cat || '', photo: session.photo || '' });
       if (session.typingUntil > at && token !== selfToken) typing.add(session.name);
     }
@@ -557,15 +562,27 @@ export function createRoom({ word, now = () => Date.now() } = {}) {
     return result;
   }
 
-  function wordMatches(given) {
-    return sameSecret(String(given ?? '').trim(), roomWord);
+  function wordKind(given) {
+    const text = String(given ?? '').trim();
+    const roomOk = sameSecret(text, roomWord);
+    const townOk = sameSecret(text, TOWN_WORD);
+    if (roomOk) return 'room';
+    if (townOk) return 'town';
+    return '';
+  }
+
+  function refuseChat(session) {
+    if (!session) return json(401, { error: 'Come in again.' });
+    if (session.chat === false) return json(403, { error: 'That is not open.' });
+    return null;
   }
 
   function handleJoin(req) {
     if (req.method === 'GET') return json(200, { needsWord: true, waiting: false });
     if (req.method !== 'POST') return json(405, { error: 'Use POST to come in.' });
     const body = req.json || {};
-    if (!wordMatches(body.roomWord)) {
+    const kind = wordKind(body.roomWord);
+    if (!kind) {
       return json(401, { error: 'That room word is not right.', needsWord: true });
     }
     const name = cleanName(body.name);
@@ -574,7 +591,7 @@ export function createRoom({ word, now = () => Date.now() } = {}) {
     if (!publicKey) return json(400, { error: 'The room could not lock.' });
     const photo = cleanPhoto(body.photo);
     if (photo == null) return json(400, { error: 'That picture could not be used.' });
-    const admitted = admit(name, publicKey, photo ? '' : cleanCat(body.cat), photo);
+    const admitted = admit(name, publicKey, photo ? '' : cleanCat(body.cat), photo, kind === 'room');
     emit({ type: 'places', places: placeRows() });
     return json(200, admitted, 'now');
   }
@@ -582,7 +599,8 @@ export function createRoom({ word, now = () => Date.now() } = {}) {
   function handlePicture(req) {
     if (req.method !== 'POST') return json(405, { error: 'Use POST to change the picture.' });
     const session = sessionFor(tokenFrom(req));
-    if (!session) return json(401, { error: 'Come in again.' });
+    const refused = refuseChat(session);
+    if (refused) return refused;
     const photo = cleanPhoto(req.json?.photo);
     if (photo == null) return json(400, { error: 'That picture could not be used.' });
     session.photo = photo;
@@ -594,7 +612,8 @@ export function createRoom({ word, now = () => Date.now() } = {}) {
     if (req.method !== 'POST') return json(405, { error: 'Use POST to send.' });
     const body = req.json || {};
     const session = sessionFor(tokenFrom(req) || String(body.token || ''));
-    if (!session) return json(401, { error: 'Come in again.' });
+    const refused = refuseChat(session);
+    if (refused) return refused;
     const iv = cleanB64(body.iv, 8, 40);
     const data = cleanB64(body.data, 16, 24000);
     if (!iv || !data) return json(400, { error: 'That note could not be carried.' });
@@ -611,10 +630,11 @@ export function createRoom({ word, now = () => Date.now() } = {}) {
   function handleWrap(req) {
     if (req.method !== 'POST') return json(405, { error: 'Use POST to pass a key.' });
     const session = sessionFor(tokenFrom(req));
-    if (!session) return json(401, { error: 'Come in again.' });
+    const refused = refuseChat(session);
+    if (refused) return refused;
     const body = req.json || {};
     const forMemberId = String(body.forMemberId || '');
-    const recipient = [...sessions.values()].find((item) => item.memberId === forMemberId);
+    const recipient = [...sessions.values()].find((item) => item.memberId === forMemberId && item.chat !== false);
     const recipientPublic = cleanB64(body.recipientPublic, 80, 200);
     const ephemeralPublic = cleanB64(body.ephemeralPublic, 80, 200);
     const iv = cleanB64(body.iv, 8, 40);
@@ -644,6 +664,9 @@ export function createRoom({ word, now = () => Date.now() } = {}) {
     const token = tokenFrom(req);
     const session = sessionFor(token);
     if (!session) return json(401, { error: 'Come in again.' });
+    if (session.chat === false) {
+      return json(200, { messages: [], wraps: [], members: [], presence: [], typing: [] });
+    }
     if (req.searchParams.get('typing') === '1') session.typingUntil = now() + 2800;
     else session.typingUntil = 0;
     let since = Number(req.searchParams.get('since') || 0);
@@ -725,7 +748,8 @@ export function createRoom({ word, now = () => Date.now() } = {}) {
   function handleUpload(req) {
     if (req.method !== 'POST') return json(405, { error: 'Use POST to attach a file.' });
     const session = sessionFor(tokenFrom(req));
-    if (!session) return json(401, { error: 'Come in again.' });
+    const refused = refuseChat(session);
+    if (refused) return refused;
     const raw = req.raw instanceof Uint8Array ? req.raw : new Uint8Array();
     if (!raw.length) return json(400, { error: 'That file is empty.' });
     if (raw.length > UPLOAD_LIMIT) return json(413, { error: 'That file is too big. The limit is 8 MB.' });

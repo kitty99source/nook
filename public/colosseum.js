@@ -243,8 +243,23 @@ function myName() {
   return (api && api.getName()) || 'Someone';
 }
 
+function chatOn() {
+  return !(api && api.chat) || api.chat();
+}
+
 function people() {
-  return api && api.people ? api.people() : [];
+  const listed = api && api.people ? api.people() : [];
+  const byId = new Map();
+  for (const person of listed) if (person && person.id) byId.set(person.id, person);
+  const self = me();
+  if (self && !byId.has(self)) {
+    byId.set(self, { id: self, name: myName(), order: api && api.getOrder ? api.getOrder() : 0 });
+  }
+  for (const other of others.values()) {
+    if (byId.has(other.id)) continue;
+    byId.set(other.id, { id: other.id, name: other.name || '', order: other.order || 0 });
+  }
+  return [...byId.values()];
 }
 
 function mapKey() {
@@ -362,6 +377,7 @@ function setMode(next) {
 }
 
 function toChat() {
+  if (!chatOn()) return;
   const room = document.querySelector('#room');
   if (room && room.hidden) return;
   const pop = room?._pop;
@@ -548,6 +564,7 @@ function applyPlace(row) {
     look: row.look || prev?.look || '',
     colour: row.colour || prev?.colour || '',
     match: row.match || '',
+    order: Number.isInteger(Number(row.order)) && Number(row.order) > 0 ? Number(row.order) : (prev?.order || 0),
     at: row.at || Date.now(),
     step: prev?.step || 0,
   };
@@ -2010,7 +2027,11 @@ function paintHud() {
   els.hudPlace.textContent = place;
   els.hudCoins.textContent = `${save.coins} coins`;
   els.hudHearts.textContent = hearts;
-  els.hudMode.textContent = mode === 'world' ? 'WASD walk · mouse aims · click fires · E talk · Tab chat' : 'Typing in the chat · Tab to play';
+  if (els.chatBtn) els.chatBtn.hidden = !chatOn();
+  if (els.settingsBtn) els.settingsBtn.hidden = chatOn();
+  els.hudMode.textContent = !chatOn()
+    ? 'WASD walk · mouse aims · click fires · E talk'
+    : mode === 'world' ? 'WASD walk · mouse aims · click fires · E talk · Tab chat' : 'Typing in the chat · Tab to play';
 }
 
 function paintBar() {
@@ -2930,7 +2951,10 @@ function buildHud() {
   els.hudPlace = h('span', 'hud-place');
   els.hudCoins = h('span', 'hud-coins');
   els.hudHearts = h('span', 'hud-hearts');
-  top.append(els.hudPlace, els.hudCoins, els.hudHearts, button('Colosseum', () => togglePop()), button('Chat', () => toChat()));
+  els.chatBtn = button('Chat', () => toChat());
+  els.settingsBtn = button('Settings', () => document.querySelector('#settings-btn')?.click());
+  els.settingsBtn.hidden = true;
+  top.append(els.hudPlace, els.hudCoins, els.hudHearts, button('Colosseum', () => togglePop()), els.chatBtn, els.settingsBtn);
   els.hudMode = h('p', 'hud-mode');
   hud.append(top, els.hudMode);
   const bar = h('div', 'item-bar');
@@ -3015,8 +3039,8 @@ export async function mountColosseum(hooks) {
   hp = PLAYER_HP;
   slot = Math.max(0, save.bar.findIndex((id) => WEAPONS[id]));
   held = {};
-  mode = 'world';
-  setMode('chat');
+  mode = chatOn() ? 'world' : 'chat';
+  setMode(chatOn() ? 'chat' : 'world');
   paintBar();
   paintHud();
   schedulePoll();

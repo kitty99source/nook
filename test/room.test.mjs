@@ -210,6 +210,79 @@ test('an alien snapshot reaches the other client, and a death removes it for bot
   assert.equal(view.json.parcels.length, 0);
 });
 
+test('a second door word opens the town without the chat', async () => {
+  const room = createRoom();
+  const ada = await enter(room, 'Ada', 'pspsps');
+  assert.equal(ada.chat, true);
+  assert.equal('guest' in ada, false);
+  const note = await request(room, {
+    method: 'POST',
+    pathname: '/api/send',
+    token: ada.token,
+    json: { iv: 'aaaaaaaaaaaa', data: 'bbbbbbbbbbbbbbbb' },
+  });
+  assert.equal(note.status, 200);
+  assert.equal(note.json.message.memberId, ada.memberId);
+
+  const bea = await enter(room, 'Bea', 'bingbong');
+  assert.equal(bea.chat, false);
+  assert.equal('guest' in bea, false);
+  const refused = await request(room, {
+    method: 'POST',
+    pathname: '/api/send',
+    token: bea.token,
+    json: { iv: 'cccccccccccc', data: 'dddddddddddddddd' },
+  });
+  assert.equal(refused.status, 403);
+  const wrap = await request(room, {
+    method: 'POST',
+    pathname: '/api/wrap',
+    token: bea.token,
+    json: {},
+  });
+  assert.equal(wrap.status, 403);
+  const upload = await request(room, { method: 'POST', pathname: '/api/upload', token: bea.token });
+  assert.equal(upload.status, 403);
+  const picture = await request(room, { method: 'POST', pathname: '/api/picture', token: bea.token, json: {} });
+  assert.equal(picture.status, 403);
+
+  const adaLive = room.openLive(ada.token);
+  adaLive.send({ type: 'place', place: stand(100, 120) });
+  const beaLive = room.openLive(bea.token);
+  const opening = beaLive.inbox.find((message) => message.type === 'places');
+  const adaPlace = opening.places.find((place) => place.memberId === ada.memberId);
+  assert.ok(adaPlace, 'the town includes the full member');
+  assert.equal(adaPlace.x, 100);
+  assert.equal(adaPlace.y, 120);
+  assert.equal(adaPlace.name, 'Ada');
+  assert.equal('guest' in adaPlace, false);
+  assert.equal('chat' in adaPlace, false);
+
+  const moved = beaLive.send({ type: 'place', place: stand(40, 80, { facing: 'left' }) });
+  assert.equal(moved.persist, 'later');
+  const seen = adaLive.inbox.filter((message) => message.type === 'place' && message.place.memberId === bea.memberId);
+  assert.equal(seen.length, 1, 'a full member sees the other cat');
+  assert.equal(seen[0].place.x, 40);
+  assert.equal(seen[0].place.name, 'Bea');
+  assert.equal('guest' in seen[0].place, false);
+  assert.equal('chat' in seen[0].place, false);
+
+  const poll = await request(room, { method: 'GET', pathname: '/api/poll', token: ada.token, search: 'since=0' });
+  assert.equal(poll.status, 200);
+  assert.equal(poll.json.members.some((member) => member.id === ada.memberId), true);
+  assert.equal(poll.json.members.some((member) => member.id === bea.memberId), false);
+  assert.equal(poll.json.presence.some((person) => person.name === 'Bea'), false);
+  assert.equal(poll.json.typing.includes('Bea'), false);
+  assert.equal(poll.json.messages.length, 1);
+
+  const quiet = await request(room, { method: 'GET', pathname: '/api/poll', token: bea.token, search: 'since=0&typing=1' });
+  assert.equal(quiet.json.messages.length, 0);
+  assert.equal(quiet.json.members.length, 0);
+  assert.equal(quiet.json.presence.length, 0);
+  const again = await request(room, { method: 'GET', pathname: '/api/poll', token: ada.token, search: 'since=0' });
+  assert.equal(again.json.typing.includes('Bea'), false);
+});
+
 test('a quiet member drops off the live map', async () => {
   let time = 1_000_000;
   const room = createRoom({ now: () => time });

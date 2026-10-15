@@ -101,6 +101,8 @@ let doorTimer = 0;
 let token = '';
 let memberId = '';
 let myName = '';
+let chatOn = true;
+let myOrder = 0;
 let identity = null;
 let groupKey = null;
 let groupKeyRaw = null;
@@ -961,6 +963,8 @@ function colosseumHooks() {
     getMemberId: () => memberId,
     getName: () => myName,
     getGroupKey: () => groupKey,
+    getOrder: () => myOrder,
+    chat: () => chatOn,
     people: () => members.map((member) => ({
       id: member.id,
       name: rememberedNames.get(member.id) || member.name,
@@ -975,9 +979,13 @@ function colosseumHooks() {
 function showRoom() {
   door.hidden = true;
   room.hidden = false;
+  if (chatOn) delete document.body.dataset.chat;
+  else document.body.dataset.chat = 'off';
   following = true;
-  paintPage({ stick: true, reset: true });
-  text.focus();
+  if (chatOn) {
+    paintPage({ stick: true, reset: true });
+    text.focus();
+  } else if (room._pop) room._pop.hide();
   mountColosseum(colosseumHooks());
 }
 
@@ -986,6 +994,9 @@ function backToDoor(message) {
   closePicture();
   token = '';
   memberId = '';
+  chatOn = true;
+  myOrder = 0;
+  delete document.body.dataset.chat;
   identity = null;
   groupKey = null;
   groupKeyRaw = null;
@@ -1376,7 +1387,7 @@ async function refreshOnce(first) {
 }
 
 async function refresh(first) {
-  if (!token) return;
+  if (!token || !chatOn) return;
   if (busy) {
     queued = true;
     return;
@@ -1740,6 +1751,8 @@ doorForm.addEventListener('submit', async (event) => {
   token = data.token;
   memberId = data.memberId;
   myName = data.name;
+  chatOn = data.chat !== false;
+  myOrder = Number(data.order) || 0;
   rememberedNames.set(memberId, myName);
   if (chosenPhoto) photoUrl(memberId, body.photo);
   else if (chosenCat) rememberedCats.set(memberId, chosenCat);
@@ -2389,6 +2402,9 @@ async function boot() {
   if (token && room.hidden) {
     token = '';
     memberId = '';
+    chatOn = true;
+    myOrder = 0;
+    delete document.body.dataset.chat;
     identity = null;
     groupKey = null;
     groupKeyRaw = null;
