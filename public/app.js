@@ -965,6 +965,7 @@ function colosseumHooks() {
       id: member.id,
       name: rememberedNames.get(member.id) || member.name,
       photo: photoFor(member.id),
+      order: member.order,
     })),
     readCopy: readColosseumCopy,
     writeCopy: writeColosseumCopy,

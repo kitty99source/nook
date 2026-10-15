@@ -1185,6 +1185,55 @@ export function rollAlien({ walking, indoors, count = 0, roll, street, player, m
   return { kind, x, y, hp: ALIENS[kind].hp, cool: ALIENS[kind].cool, facing: left ? 'right' : 'left', moving: false, side: left ? 'left' : 'right' };
 }
 
+// The earliest person on a map runs the aliens. Everyone else draws that list.
+export function alienAuthority(rows, map) {
+  const here = (rows || []).filter((row) => row && row.id && row.map === map);
+  here.sort((a, b) => {
+    const ao = Number.isInteger(Number(a.order)) && Number(a.order) > 0 ? Number(a.order) : Number.MAX_SAFE_INTEGER;
+    const bo = Number.isInteger(Number(b.order)) && Number(b.order) > 0 ? Number(b.order) : Number.MAX_SAFE_INTEGER;
+    if (ao !== bo) return ao - bo;
+    return String(a.id).localeCompare(String(b.id));
+  });
+  return here.length ? here[0].id : '';
+}
+
+export function applyAlienSnapshot(body) {
+  const out = [];
+  const seen = new Set();
+  for (const row of body?.aliens || []) {
+    if (!row || !row.id || seen.has(row.id)) continue;
+    if (row.kind !== 'grunt' && row.kind !== 'brute') continue;
+    if (!Number.isFinite(Number(row.x)) || !Number.isFinite(Number(row.y))) continue;
+    if (!['up', 'down', 'left', 'right'].includes(row.facing)) continue;
+    const hp = Math.round(Number(row.hp));
+    if (!Number.isFinite(hp) || hp <= 0) continue;
+    seen.add(String(row.id));
+    out.push({ id: String(row.id), kind: row.kind, x: Number(row.x), y: Number(row.y), facing: row.facing, hp });
+  }
+  return out;
+}
+
+export function aliensAfterDeath(list, id) {
+  return (list || []).filter((row) => row && row.id !== id);
+}
+
+// A new authority keeps the aliens already on screen. A follower draws the snapshot.
+export function alienRoster({ authority, me, held, snapshot } = {}) {
+  const drawn = applyAlienSnapshot({ aliens: snapshot });
+  if (authority && me && authority === me) {
+    const mine = applyAlienSnapshot({ aliens: held });
+    return mine.length ? mine : drawn;
+  }
+  return drawn;
+}
+
+// A match-end closes the fight for the winner and the loser.
+export function matchAfterEnd(match, { matchKey, winnerId, meId } = {}) {
+  if (!match || !matchKey || match.id !== matchKey) return match ? { ...match } : null;
+  const won = !!meId && winnerId === meId;
+  return { ...match, on: false, paid: match.paid === true || won };
+}
+
 export function stepAlien(alien, player, map, dt, rng = Math.random) {
   const spec = ALIENS[alien.kind] || ALIENS.grunt;
   const a = { ...alien, cool: alien.cool - dt };

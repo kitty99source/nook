@@ -113,6 +113,7 @@ const PLAY_KINDS = new Set([
   'gift', 'gift-accept', 'gift-decline', 'send',
   'trade', 'trade-accept', 'trade-decline',
   'emote', 'postcard', 'home', 'drink',
+  'aliens', 'alien-hit',
 ]);
 
 function cleanWorks(value) {
@@ -143,6 +144,18 @@ function cleanFurniture(value) {
     if (out.length >= 12) break;
   }
   return out;
+}
+
+function cleanAlien(item) {
+  if (!item || typeof item !== 'object') return null;
+  const id = cleanToken(item.id, 24);
+  const kind = item.kind === 'brute' ? 'brute' : item.kind === 'grunt' ? 'grunt' : '';
+  const x = cleanCoord(item.x);
+  const y = cleanCoord(item.y);
+  const facing = FACING.has(item.facing) ? item.facing : '';
+  const hp = cleanInt(item.hp, 1, 12);
+  if (!id || !kind || x == null || y == null || !facing || hp == null) return null;
+  return { id, kind, x, y, facing, hp };
 }
 
 function cleanPlay(body, session, at) {
@@ -241,6 +254,38 @@ function cleanPlay(body, session, at) {
   }
   if (kind === 'drink') {
     if (!to) return null;
+    return play;
+  }
+  if (kind === 'aliens') {
+    const map = cleanMap(body.map);
+    if (!map) return null;
+    play.map = map;
+    play.aliens = [];
+    for (const item of Array.isArray(body.aliens) ? body.aliens : []) {
+      const alien = cleanAlien(item);
+      if (!alien) continue;
+      play.aliens.push(alien);
+      if (play.aliens.length >= 6) break;
+    }
+    play.down = [];
+    for (const item of Array.isArray(body.down) ? body.down : []) {
+      if (!item || typeof item !== 'object') continue;
+      const id = cleanToken(item.id, 24);
+      const by = cleanMember(item.by);
+      if (!id || !by) continue;
+      play.down.push({ id, by });
+      if (play.down.length >= 6) break;
+    }
+    return play;
+  }
+  if (kind === 'alien-hit') {
+    const id = cleanToken(body.id, 24);
+    const map = cleanMap(body.map);
+    const damage = cleanInt(body.damage, 1, 12);
+    if (!id || !map || damage == null) return null;
+    play.id = id;
+    play.map = map;
+    play.damage = damage;
     return play;
   }
   if (kind === 'home') {

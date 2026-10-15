@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createIdentity } from '../public/e2e.js';
-import { applyHit, fireWeapon, gameCursor, hitBox, resolveShots } from '../public/colosseum-logic.mjs';
+import { aliensAfterDeath, applyAlienSnapshot, applyHit, fireWeapon, gameCursor, hitBox, resolveShots } from '../public/colosseum-logic.mjs';
 import { createRoom } from '../room.mjs';
 
 function request(room, { method, pathname, token = '', json = null, search = '' }) {
@@ -176,6 +176,37 @@ test('a duel ready and a games invite travel without a group key', async () => {
   assert.equal(accepted.play.startAt, 5000);
 
   const view = await request(room, { method: 'GET', pathname: '/api/game', token: ada.token, search: 'since=0' });
+  assert.equal(view.json.parcels.length, 0);
+});
+
+test('an alien snapshot reaches the other client, and a death removes it for both', async () => {
+  const room = createRoom();
+  const ada = await enter(room, 'Ada');
+  const bea = await enter(room, 'Bea');
+  const adaLive = room.openLive(ada.token);
+  const beaLive = room.openLive(bea.token);
+  const living = [{ id: 'c1', kind: 'brute', x: 40, y: 80, facing: 'right', hp: 5 }];
+  const sent = adaLive.send({ type: 'play', play: { kind: 'aliens', map: 'town', aliens: living } });
+  assert.equal(sent.persist, 'no');
+  const heard = beaLive.inbox.filter((message) => message.type === 'play' && message.play.kind === 'aliens');
+  assert.equal(heard.length, 1);
+  const drawn = applyAlienSnapshot(heard[0].play);
+  assert.equal(drawn.length, 1);
+  assert.equal(drawn[0].id, 'c1');
+  assert.equal(drawn[0].kind, 'brute');
+  assert.equal(drawn[0].x, 40);
+  assert.equal(drawn[0].y, 80);
+  assert.equal(drawn[0].facing, 'right');
+  assert.equal(drawn[0].hp, 5);
+  assert.equal(heard[0].play.from, ada.memberId);
+
+  adaLive.send({ type: 'play', play: { kind: 'aliens', map: 'town', aliens: [], down: [{ id: 'c1', by: bea.memberId }] } });
+  const later = beaLive.inbox.filter((message) => message.type === 'play' && message.play.kind === 'aliens');
+  const gone = applyAlienSnapshot(later.at(-1).play);
+  assert.deepEqual(gone, aliensAfterDeath(drawn, 'c1'));
+  assert.equal(later.at(-1).play.down[0].by, bea.memberId);
+
+  const view = await request(room, { method: 'GET', pathname: '/api/game', token: bea.token, search: 'since=0' });
   assert.equal(view.json.parcels.length, 0);
 });
 

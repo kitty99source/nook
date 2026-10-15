@@ -24,7 +24,11 @@ import {
   WIN_PAY,
   WORK_SECONDS,
   acceptTrade,
+  alienAuthority,
+  alienRoster,
+  aliensAfterDeath,
   aloneInMatch,
+  applyAlienSnapshot,
   applyCatLoot,
   applyHit,
   applyPurse,
@@ -62,6 +66,7 @@ import {
   inArena,
   latestPostcards,
   launchPlanet,
+  matchAfterEnd,
   mayEnter,
   moveFavourite,
   nextClue,
@@ -628,6 +633,44 @@ test('alien cats keep to the street, shoot back, and leave loot; gore stays off 
   assert.equal(goreBits(0), 0);
   assert.ok(goreBits(3) > goreBits(1));
   assert.equal(GORE_LEVELS.length, 4);
+});
+
+test('the earliest person on a map shares aliens, and a death removes that alien for both', () => {
+  const ada = { id: 'ada', order: 1, map: 'town' };
+  const bea = { id: 'bea', order: 2, map: 'town' };
+  const cy = { id: 'cy', order: 0, map: 'tavern' };
+  assert.equal(alienAuthority([bea, ada, cy], 'town'), 'ada');
+  assert.equal(alienAuthority([bea, cy], 'town'), 'bea');
+  const snap = [{ id: 'c1', kind: 'brute', x: 40, y: 80, facing: 'right', hp: 5 }];
+  const drawn = applyAlienSnapshot({ aliens: snap });
+  assert.equal(drawn.length, 1);
+  assert.equal(drawn[0].kind, 'brute');
+  assert.equal(drawn[0].x, 40);
+  assert.equal(drawn[0].y, 80);
+  assert.equal(drawn[0].facing, 'right');
+  assert.equal(drawn[0].hp, 5);
+  const follower = alienRoster({ authority: 'ada', me: 'bea', held: [], snapshot: snap });
+  assert.deepEqual(follower, drawn);
+  const dead = aliensAfterDeath(drawn, 'c1');
+  assert.deepEqual(dead, []);
+  assert.deepEqual(alienRoster({ authority: 'ada', me: 'bea', held: drawn, snapshot: dead }), []);
+  const kept = alienRoster({ authority: 'bea', me: 'bea', held: drawn, snapshot: [] });
+  assert.equal(kept.length, 1);
+  assert.equal(kept[0].id, 'c1');
+  assert.equal(kept[0].kind, 'brute');
+});
+
+test('a match-end for a win clears the match for the winner and the loser', () => {
+  const key = 'm-ada-bea-10';
+  const report = { matchKey: key, winnerId: 'ada' };
+  const winner = matchAfterEnd({ on: true, id: key, paid: false, livesLeft: 2 }, { ...report, meId: 'ada' });
+  const loser = matchAfterEnd({ on: true, id: key, paid: false, livesLeft: 0 }, { ...report, meId: 'bea' });
+  assert.equal(winner.on, false);
+  assert.equal(loser.on, false);
+  assert.equal(winner.paid, true);
+  assert.equal(loser.paid, false);
+  const other = matchAfterEnd({ on: true, id: 'm-other', paid: false }, { ...report, meId: 'ada' });
+  assert.equal(other.on, true);
 });
 
 test('the tavern pays more than the market, and a match keeps fighters in the ring', () => {

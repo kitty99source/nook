@@ -29,8 +29,12 @@ import {
   WORKS,
   WORK_SECONDS,
   acceptTrade,
+  ALIENS,
   aimAngle,
+  alienAuthority,
+  alienRoster,
   aloneInMatch,
+  applyAlienSnapshot,
   applyCatLoot,
   applyHit,
   applyPurse,
@@ -63,6 +67,7 @@ import {
   LIVE_PLACE_S,
   LIVE_SNAP,
   launchPlanet,
+  matchAfterEnd,
   mayEnter,
   moveFavourite,
   nearestSpot,
@@ -209,6 +214,11 @@ let liveSocket = null;
 let liveTries = 0;
 let draining = false;
 const aliens = [];
+const alienLoot = new Set();
+const alienCool = new Map();
+let alienSeq = 1;
+let alienDirty = false;
+let alienDue = 0;
 const particles = [];
 const rings = [];
 const flashes = [];
@@ -649,6 +659,10 @@ function applyParcel(payload, row) {
     }
   } else if (kind === 'match-end') {
     finishMatch(body);
+  } else if (kind === 'aliens') {
+    takeAlienSnapshot(payload.from, body);
+  } else if (kind === 'alien-hit') {
+    takeAlienHit(payload.from, body);
   } else if (kind === 'emote') {
     if (!body.to || body.to === me()) bubble(payload.from, body.icon);
   } else if (kind === 'trade' && body.to === me()) {
@@ -908,13 +922,14 @@ function publishHome(open = atHome()) {
 
 function goTo(id, { spawn = null, owner = '' } = {}) {
   const leavingHome = atHome();
+  const keepTownAliens = id === 'town' && mapId === 'town';
   mapId = id;
   mapOwner = id === 'home' ? owner || me() : '';
   const patches = id === 'home' ? (mapOwner === me() ? save.patches : homes.get(mapOwner)?.patches || 1) : 1;
   map = getMap(id, { patches });
   const at = spawn || map.spawn;
   actor = { ...actor, x: at.x, y: at.y, moving: false, facing: id === 'town' ? 'down' : 'up' };
-  aliens.length = 0;
+  if (!keepTownAliens) aliens.length = 0;
   myShots.length = 0;
   foeShots.length = 0;
   peerShots.length = 0;
@@ -1150,18 +1165,126 @@ function explodeAlien(alien) {
   }
 }
 
-function damageAlien(alien, amount) {
-  alien.hp -= amount;
-  alien.flash = 0.12;
-  if (alien.hp > 0) return;
-  const idx = aliens.indexOf(alien);
-  if (idx >= 0) aliens.splice(idx, 1);
-  explodeAlien(alien);
+function liveAlien(row) {
+  const spec = ALIENS[row.kind] || ALIENS.grunt;
+  return { ...row, cool: spec.cool, moving: false, flash: 0, step: 0 };
+}
+
+function rosterHere() {
+  const map = mapKey();
+  if (mapId !== 'town') return [];
+  const rows = [];
+  for (const person of people()) {
+    if (!person || !person.id) continue;
+    if (person.id === me()) {
+      if (match && match.on) continue;
+      rows.push({ id: person.id, order: person.order, map });
+      continue;
+    }
+    const other = others.get(person.id);
+    if (!other || other.map !== map || other.match) continue;
+    rows.push({ id: person.id, order: person.order, map });
+  }
+  const company = [...others.values()].some((other) => other.map === map && !other.match);
+  if (!rows.length && !(match && match.on) && !company) rows.push({ id: me() || 'me', order: 1, map });
+  return rows;
+}
+
+function authorityId() {
+  return alienAuthority(rosterHere(), mapKey());
+}
+
+function iAmAuthority() {
+  const id = authorityId();
+  return !!id && id === me();
+}
+
+function alienBody(down) {
+  return {
+    map: mapKey(),
+    aliens: aliens.filter((alien) => alien && alien.hp > 0).map((alien) => ({
+      id: alien.id,
+      kind: alien.kind === 'brute' ? 'brute' : 'grunt',
+      x: Math.round(alien.x),
+      y: Math.round(alien.y),
+      facing: ['up', 'down', 'left', 'right'].includes(alien.facing) ? alien.facing : 'left',
+      hp: Math.max(1, Math.round(alien.hp)),
+    })),
+    down: down || [],
+  };
+}
+
+function publishAliens(down) {
+  if (!iAmAuthority() || mapId !== 'town') return;
+  publish('aliens', alienBody(down));
+  alienDirty = false;
+  alienDue = clock + 0.1;
+}
+
+function flushAliens() {
+  if (!alienDirty || clock < alienDue || !iAmAuthority() || mapId !== 'town') return;
+  publishAliens();
+}
+
+function lootAlien(id) {
+  if (!id || alienLoot.has(id)) return;
+  alienLoot.add(id);
   const loot = catLoot(Math.random());
   setSave(applyCatLoot(save, loot));
   say(loot.part ? `The alien cat dropped coins and ${itemName(loot.part)}.` : 'The alien cat dropped a few coins.');
   paintHud();
   paintPanel();
+}
+
+function grantAlienDown(body) {
+  for (const row of body?.down || []) {
+    if (row && row.by === me()) lootAlien(row.id);
+  }
+}
+
+function takeAlienSnapshot(from, body) {
+  if (!body || body.map !== mapKey() || mapId !== 'town') return;
+  grantAlienDown(body);
+  const auth = authorityId();
+  if (!auth) return;
+  const adopt = auth === me() ? aliens.length === 0 && from !== me() : from === auth;
+  if (!adopt) return;
+  const next = alienRoster({ authority: '', me: me(), held: [], snapshot: body.aliens });
+  aliens.length = 0;
+  for (const row of next) aliens.push(liveAlien(row));
+}
+
+function takeAlienHit(from, body) {
+  if (!iAmAuthority() || !body || body.map !== mapKey()) return;
+  const alien = aliens.find((item) => item.id === body.id);
+  if (!alien) return;
+  woundAlien(alien, body.damage || 1, from);
+}
+
+function woundAlien(alien, amount, killer) {
+  if (!alien) return;
+  alien.flash = 0.12;
+  alien.hp -= amount;
+  if (alien.hp > 0) {
+    alienDirty = true;
+    return;
+  }
+  const id = alien.id;
+  const idx = aliens.indexOf(alien);
+  if (idx >= 0) aliens.splice(idx, 1);
+  explodeAlien(alien);
+  if (killer === me()) lootAlien(id);
+  publishAliens([{ id, by: killer }]);
+}
+
+function damageAlien(alien, amount) {
+  if (!alien) return;
+  if (!iAmAuthority()) {
+    alien.flash = 0.12;
+    if (alien.id) publish('alien-hit', { id: alien.id, damage: Math.max(1, Math.round(amount)), map: mapKey() });
+    return;
+  }
+  woundAlien(alien, amount, me());
 }
 
 function hurtMe(amount) {
@@ -1171,7 +1294,6 @@ function hurtMe(amount) {
   burst(actor.x, actor.y - 8, ['#ff5a7a', '#ffffff'], 6, 40, 0.3);
   if (hp <= 0) {
     hp = PLAYER_HP;
-    aliens.length = 0;
     foeShots.length = 0;
     goTo('town', { spawn: getMap('town').spawn });
     say('Knocked out. Back on your paws in the plaza.');
@@ -1296,24 +1418,56 @@ function impact(shot, x, y, target) {
   if (target) damageAlien(target, shot.damage || 1);
 }
 
+function stepFollowerShots(dt) {
+  for (const alien of aliens) {
+    if (!alien.id) continue;
+    const spec = ALIENS[alien.kind] || ALIENS.grunt;
+    const cool = (alienCool.get(alien.id) || 0) - dt;
+    const near = Math.hypot(alien.x - actor.x, alien.y - actor.y) < 160;
+    if (!near || cool > 0) {
+      if (cool > 0) alienCool.set(alien.id, cool);
+      continue;
+    }
+    alienCool.set(alien.id, spec.cool);
+    const ang = aimAngle({ x: alien.x, y: alien.y - 6 }, chest());
+    foeShots.push({
+      gun: 'goo', from: 'alien', x: alien.x, y: alien.y - 6,
+      vx: Math.cos(ang) * spec.shot, vy: Math.sin(ang) * spec.shot, r: 3, life: 2, damage: 1,
+    });
+  }
+}
+
 function stepAliens(dt) {
-  const street = mapId === 'town' && !(match && match.on);
-  if (!street) {
+  if (mapId !== 'town') {
     aliens.length = 0;
     return;
   }
-  catClock += dt;
-  if (catClock > 4) {
-    catClock = 0;
-    const born = rollAlien({ walking: true, indoors: false, count: aliens.length, roll: Math.random(), street: map.street, player: actor });
-    if (born) aliens.push(born);
+  if (!iAmAuthority()) {
+    if (!(match && match.on)) stepFollowerShots(dt);
+    return;
   }
-  for (let i = 0; i < aliens.length; i += 1) {
-    const { alien, shot } = stepAlien(aliens[i], actor, map, dt);
-    alien.flash = Math.max(0, (aliens[i].flash || 0) - dt);
-    aliens[i] = alien;
-    if (shot) foeShots.push(shot);
+  if (!(match && match.on)) {
+    catClock += dt;
+    if (catClock > 4) {
+      catClock = 0;
+      const born = rollAlien({ walking: true, indoors: false, count: aliens.length, roll: Math.random(), street: map.street, player: actor });
+      if (born) {
+        alienSeq += 1;
+        born.id = `${(me() || 'cat').slice(0, 8)}-${alienSeq}`;
+        aliens.push(born);
+        publishAliens();
+      }
+    }
+    for (let i = 0; i < aliens.length; i += 1) {
+      const prev = aliens[i];
+      const { alien, shot } = stepAlien(prev, actor, map, dt);
+      alien.id = prev.id;
+      alien.flash = Math.max(0, (prev.flash || 0) - dt);
+      aliens[i] = alien;
+      if (shot) foeShots.push(shot);
+    }
   }
+  if (aliens.length && clock >= alienDue) alienDirty = true;
 }
 
 // ---- Matches in the Colosseum -----------------------------------------------------------
@@ -1337,6 +1491,7 @@ function beginSharedMatch(view) {
   const rival = (view.ids || []).find((id) => id !== me()) || '';
   match = { on: true, id: view.matchId, lives: 3, livesLeft: 3, invuln: 0, paid: false, rival };
   actor = { ...actor, ...respawn(ARENA.starts[slot] || ARENA.starts[0]) };
+  foeShots.length = 0;
   say('Three lives. Aim with the mouse, click to fire.');
   closeCard();
   paintHud();
@@ -1412,18 +1567,46 @@ function joinMatch() {
   paintHud();
 }
 
+function gateExit(side) {
+  const gate = ARENA.gate;
+  return {
+    x: Math.round(gate.x + gate.w / 2 + side * 16),
+    y: gate.y - 6,
+    facing: 'up',
+    moving: false,
+  };
+}
+
+function exitMatch(outcome) {
+  if (!match || !match.on) return;
+  const ended = matchAfterEnd(match, {
+    matchKey: match.id,
+    winnerId: outcome === 'win' ? me() : '',
+    meId: me(),
+  });
+  if (!ended || ended.on !== false) return;
+  match = null;
+  matchShots.length = 0;
+  actor = { ...actor, ...gateExit(outcome === 'win' ? 1 : -1) };
+  if (outcome === 'win' || outcome === 'loss') grant(outcome);
+  else say('The duel is over.');
+  closeCard();
+  paintHud();
+  publishPlace(true);
+}
+
 function takeMatchHit(from, damage) {
   if (!match || !match.on || match.invuln > 0) return;
   match.livesLeft = applyHit(match.livesLeft, damage);
   match.invuln = 1;
   burst(actor.x, actor.y - 8, ['#ff5a7a', '#ffffff'], 8, 50, 0.3);
-  actor = { ...actor, ...respawn(ARENA.starts[match.rival ? 1 : 0]) };
   if (match.livesLeft <= 0) {
     const winner = others.get(from);
     publish('match-end', { matchKey: match.id, winnerId: from, winnerName: winner?.name || '', loserName: myName() });
-    match.on = false;
-    grant('loss');
+    exitMatch('loss');
+    return;
   }
+  actor = { ...actor, ...respawn(ARENA.starts[match.rival ? 1 : 0]) };
   paintHud();
 }
 
@@ -1435,12 +1618,12 @@ function finishMatch(body) {
   if (body.loserName) results.push({ ally: body.loserName, matchKey: body.matchKey, won: false });
   const settled = settleBets(save.coins, lost, results);
   setSave({ ...save, coins: settled.coins, bets: settled.bets });
-  if (match && match.id === body.matchKey && body.winnerId === me() && !match.paid) {
-    match.paid = true;
-    match.on = false;
-    grant('win');
-  } else if (match && match.id === body.matchKey) match.on = false;
-  paintHud();
+  if (!(match && match.on && match.id === body.matchKey)) {
+    paintHud();
+    return;
+  }
+  const won = body.winnerId === me() && !match.paid;
+  exitMatch(won ? 'win' : 'out');
 }
 
 function stepMatch(dt) {
@@ -1580,6 +1763,7 @@ function netTick(dt) {
     flushPlace();
   } else if (pendingPlace && due) flushPlace();
   flushLive();
+  flushAliens();
   stepGate();
   if (queued.size) void drainQueue();
   homeTimer += dt;
@@ -2866,6 +3050,9 @@ export function settleColosseum() {
   myShots.length = 0;
   foeShots.length = 0;
   aliens.length = 0;
+  alienLoot.clear();
+  alienCool.clear();
+  alienDirty = false;
   others.clear();
   homes.clear();
   readies.clear();
