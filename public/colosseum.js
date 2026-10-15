@@ -231,8 +231,8 @@ const els = {};
 // ---- Small helpers -------------------------------------------------------------
 
 function roomOpen() {
-  const room = document.querySelector('#room');
-  return !!(room && !room.hidden && api);
+  const door = document.querySelector('#door');
+  return !!(api && door && door.hidden);
 }
 
 function me() {

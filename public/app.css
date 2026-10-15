@@ -1549,8 +1549,8 @@ body[data-theme="vapor-neon"] {
 }
 
 /* Full-page vapor covers the codeword screen. The town canvas stays hidden
-   there, so the game and the scene never show together. Once the room is
-   open, #vapor cannot cover the game. */
+   there, so the game and the scene never show together. Once the door is
+   shut, #vapor cannot cover the game, even when the chat window is hidden. */
 body[data-chat="off"] #room {
   display: none !important;
 }
@@ -1559,11 +1559,11 @@ body[data-chat="off"] .chat-only {
   display: none !important;
 }
 
-body[data-theme^="vapor-"]:has(#room[hidden]) #world {
+body[data-theme^="vapor-"]:not(:has(#door[hidden])) #world {
   visibility: hidden;
 }
 
-body[data-theme^="vapor-"]:not(:has(#room[hidden])) #vapor {
+body[data-theme^="vapor-"]:has(#door[hidden]) #vapor {
   display: none !important;
 }
 

@@ -978,14 +978,16 @@ function colosseumHooks() {
 
 function showRoom() {
   door.hidden = true;
-  room.hidden = false;
-  if (chatOn) delete document.body.dataset.chat;
-  else document.body.dataset.chat = 'off';
-  following = true;
   if (chatOn) {
+    delete document.body.dataset.chat;
+    room.hidden = false;
+    following = true;
     paintPage({ stick: true, reset: true });
     text.focus();
-  } else if (room._pop) room._pop.hide();
+  } else {
+    document.body.dataset.chat = 'off';
+    room.hidden = true;
+  }
   mountColosseum(colosseumHooks());
 }
 

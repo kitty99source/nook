@@ -6,9 +6,15 @@ const MAX_SHIFT = 12;
 
 let started = false;
 
+// The loading scene covers the codeword screen only. Chat can be hidden
+// and the town is still on: the door, not the chat window, decides.
+export function townRevealed(doorHidden) {
+  return doorHidden === true;
+}
+
 function passedDoor() {
-  const room = document.querySelector('#room');
-  return !!(room && !room.hidden);
+  const door = document.querySelector('#door');
+  return townRevealed(!!door && door.hidden);
 }
 
 export function initVapor() {
@@ -175,9 +181,9 @@ export function initVapor() {
     attributeFilter: ['data-theme', 'data-chat-scene'],
   });
 
-  const room = document.querySelector('#room');
-  if (room) {
-    new MutationObserver(sync).observe(room, {
+  const door = document.querySelector('#door');
+  if (door) {
+    new MutationObserver(sync).observe(door, {
       attributes: true,
       attributeFilter: ['hidden'],
     });
@@ -192,4 +198,4 @@ export function initVapor() {
   sync();
 }
 
-initVapor();
+if (typeof document !== 'undefined') initVapor();

@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { townRevealed } from '../public/vapor.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (rel) => fs.readFileSync(path.join(root, rel), 'utf8');
@@ -21,6 +22,17 @@ function reducedMotionBlock(css) {
   }
   throw new Error('unclosed reduced-motion block');
 }
+
+test('the town is revealed when the door shuts, even if chat stays hidden', () => {
+  assert.equal(townRevealed(true), true);
+  assert.equal(townRevealed(false), false);
+  const css = read('public/app.css');
+  assert.match(css, /:not\(:has\(#door\[hidden\]\)\) #world/);
+  assert.match(css, /:has\(#door\[hidden\]\) #vapor/);
+  assert.doesNotMatch(css, /:has\(#room\[hidden\]\) #world/);
+  const vapor = read('public/vapor.js');
+  assert.match(vapor, /querySelector\('#door'\)/);
+});
 
 test('THEMES in whimsy.js include the three vapor themes', () => {
   const src = read('public/whimsy.js');
